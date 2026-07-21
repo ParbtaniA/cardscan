@@ -246,6 +246,7 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
           <label style="display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text2);cursor:pointer;padding:4px 0">
             <input type="checkbox" id="fuCheck" style="width:auto;accent-color:var(--accent)"> Mark for follow-up
           </label>
+          <div id="locStatus" style="font-size:13px;color:var(--text3);padding:4px 0;min-height:20px"></div>
           <button class="btn btn-primary" onclick="saveContact()">💾 Save to Airtable</button>
           <button class="btn btn-secondary" onclick="showEdit()">Edit fields first</button>
           <button class="btn btn-link" onclick="resetScan()" style="color:var(--red);text-decoration:none;margin-top:4px">✕ Cancel — discard this scan</button>
@@ -405,6 +406,7 @@ function handleImg(e) {
     const img = document.getElementById('prevImg');
     img.src = ev.target.result; img.style.display = 'block';
     document.getElementById('scanBtn').style.display = 'flex';
+    getLocation();
     document.getElementById('resultBlock').style.display = 'none';
     document.getElementById('editBlock').style.display = 'none';
     document.getElementById('scanStatus').innerHTML = '';
@@ -466,6 +468,31 @@ function resetScan() {
   // Reset file input so same card can be re-scanned
   const inp = document.querySelector('input[type="file"]');
   if (inp) inp.value = '';
+}
+
+// ── Location ───────────────────────────────────────────────────
+function getLocation() {
+  const el = document.getElementById('locStatus');
+  if (!navigator.geolocation) { if(el) el.textContent = 'GPS not available'; return; }
+  if(el) el.innerHTML = '<span style="color:var(--accent)">📍 Getting location…</span>';
+  navigator.geolocation.getCurrentPosition(
+    async pos => {
+      const { latitude: lat, longitude: lon } = pos.coords;
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+        const data = await res.json();
+        const addr = data.address;
+        const loc = [addr.city||addr.town||addr.village||addr.county, addr.state, addr.country].filter(Boolean).join(', ');
+        lss('lastLocation', loc);
+        if(el) el.innerHTML = `<span style="color:var(--green)">📍 ${loc}</span>`;
+      } catch {
+        const loc = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+        lss('lastLocation', loc);
+        if(el) el.innerHTML = `<span style="color:var(--green)">📍 ${loc}</span>`;
+      }
+    },
+    () => { if(el) el.textContent = ''; lss('lastLocation', ''); }
+  );
 }
 
 function initials(n) { return (n||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
@@ -638,6 +665,7 @@ async function pushToAT(p, note, event, fu, qrRaw) {
     'Event': event||'',
     'Follow Up': !!fu,
     'Date Scanned': new Date().toISOString(),
+    'Location': ls('lastLocation')||'',
   };
   if (qrRaw) fields['QR Data'] = qrRaw;
 
@@ -755,7 +783,8 @@ function openDetail(c) {
     c['Address'] && ['📍','Address',c['Address']],
     c['Event']   && ['📅','Event',c['Event']],
     c['Note']    && ['📝','Note',c['Note']],
-    c['Date Scanned'] && ['🕐','Scanned', new Date(c['Date Scanned']).toLocaleDateString()],
+    c['Location']    && ['📍','Scanned at',c['Location']],
+    c['Date Scanned'] && ['🕐','Scanned',new Date(c['Date Scanned']).toLocaleDateString()],
   ].filter(Boolean);
   document.getElementById('detailInner').innerHTML = `
     <div class="card">
