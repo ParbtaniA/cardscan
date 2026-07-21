@@ -763,7 +763,32 @@ function openDetail(c) {
       </div>
       <hr class="rule">
       ${rows.map(([ico,lbl,val])=>field(ico,lbl,val)).join('')}
-    </div>`;
+    </div>
+    <button class="btn btn-secondary" onclick="deleteContact('${c._id}')" style="background:var(--red-bg);color:var(--red);border-color:var(--red);margin-top:4px">🗑 Delete contact</button>`;
+}
+
+async function deleteContact(id) {
+  if (!confirm('Delete this contact? This cannot be undone.')) return;
+  const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
+  const tok = ls('at_key');
+  // Delete from Airtable if it's an Airtable record ID (starts with rec)
+  if (tok && id && id.startsWith('rec')) {
+    try {
+      const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${tok}` }
+      });
+      if (!res.ok) throw new Error(await res.text());
+    } catch(e) {
+      toast('Failed to delete from Airtable'); console.error(e); return;
+    }
+  }
+  // Remove from local cache
+  contacts = contacts.filter(c => c._id !== id);
+  lss('contacts', JSON.stringify(contacts));
+  toast('Contact deleted');
+  closeDetail();
+  renderList();
 }
 
 function closeDetail() {
