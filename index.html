@@ -246,7 +246,10 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
           <label style="display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text2);cursor:pointer;padding:4px 0">
             <input type="checkbox" id="fuCheck" style="width:auto;accent-color:var(--accent)"> Mark for follow-up
           </label>
-          <div id="locStatus" style="font-size:13px;color:var(--text3);padding:4px 0;min-height:20px"></div>
+          <div class="fg" id="locationField" style="display:none">
+            <label>📍 Location <span id="locSpinner" style="font-size:11px;color:var(--text3);font-weight:400"></span></label>
+            <input type="text" id="locationIn" placeholder="Detecting…" style="background:var(--accent-bg);border-color:var(--accent-border)">
+          </div>
           <button class="btn btn-primary" onclick="saveContact()">💾 Save to Airtable</button>
           <button class="btn btn-secondary" onclick="showEdit()">Edit fields first</button>
           <button class="btn btn-link" onclick="resetScan()" style="color:var(--red);text-decoration:none;margin-top:4px">✕ Cancel — discard this scan</button>
@@ -465,33 +468,99 @@ function resetScan() {
   document.getElementById('noteIn').value = '';
   document.getElementById('eventIn').value = '';
   document.getElementById('fuCheck').checked = false;
+  const locField = document.getElementById('locationField');
+  if (locField) locField.style.display = 'none';
+  const locIn = document.getElementById('locationIn');
+  if (locIn) locIn.value = '';
   // Reset file input so same card can be re-scanned
   const inp = document.querySelector('input[type="file"]');
   if (inp) inp.value = '';
 }
 
 // ── Location ───────────────────────────────────────────────────
+function setLocationField(val) {
+  const field = document.getElementById('locationField');
+  const input = document.getElementById('locationIn');
+  const spinner = document.getElementById('locSpinner');
+  if (!field || !input) return;
+  field.style.display = 'block';
+  input.value = val;
+  lss('lastLocation', val);
+  if (spinner) spinner.textContent = '';
+}
+
 function getLocation() {
-  const el = document.getElementById('locStatus');
-  if (!navigator.geolocation) { if(el) el.textContent = 'GPS not available'; return; }
-  if(el) el.innerHTML = '<span style="color:var(--accent)">📍 Getting location…</span>';
+  if (!navigator.geolocation) return;
+  const field = document.getElementById('locationField');
+  const spinner = document.getElementById('locSpinner');
+  if (field) field.style.display = 'block';
+  if (spinner) spinner.textContent = '· detecting…';
+
   navigator.geolocation.getCurrentPosition(
     async pos => {
       const { latitude: lat, longitude: lon } = pos.coords;
+      const R = 200; // 200m radius for nearby landmark
+
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
-        const data = await res.json();
-        const addr = data.address;
-        const loc = [addr.city||addr.town||addr.village||addr.county, addr.state, addr.country].filter(Boolean).join(', ');
-        lss('lastLocation', loc);
-        if(el) el.innerHTML = `<span style="color:var(--green)">📍 ${loc}</span>`;
+        // Step 1: Try Overpass API for most prominent nearby POI
+        const overpassQuery = `
+          [out:json][timeout:10];
+          (
+            node["tourism"~"hotel|museum|attraction|gallery|zoo|theme_park"](around:${R},${lat},${lon});
+            node["amenity"~"conference_centre|events_venue|university|college|stadium|theatre|cinema|bar|restaurant|cafe|hospital"](around:${R},${lat},${lon});
+            node["leisure"~"stadium|sports_centre"](around:${R},${lat},${lon});
+            way["building"~"commercial|retail|office|hotel"](around:50,${lat},${lon});
+            node["name"](around:80,${lat},${lon});
+          );
+          out body 10;
+        `;
+        const overRes = await fetch('https://overpass-api.de/api/interpreter', {
+          method: 'POST',
+          body: 'data=' + encodeURIComponent(overpassQuery)
+        });
+        const overData = await overRes.json();
+
+        // Pick the best named element — prefer tourism/amenity with a name
+        const elements = (overData.elements || []).filter(e => e.tags && e.tags.name);
+        const priority = ['tourism','amenity','leisure','building'];
+        let best = null;
+        for (const p of priority) {
+          best = elements.find(e => e.tags[p]);
+          if (best) break;
+        }
+        if (!best && elements.length) best = elements[0];
+
+        if (best && best.tags.name) {
+          setLocationField(best.tags.name);
+          return;
+        }
+      } catch(e) { /* fall through */ }
+
+      try {
+        // Step 2: Fallback to Nominatim reverse geocode — most specific named place
+        const nomRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=17&addressdetails=1`);
+        const nomData = await nomRes.json();
+        const addr = nomData.address || {};
+        // Pick most specific named place first
+        const loc =
+          addr.amenity ||
+          addr.tourism ||
+          addr.building ||
+          addr.leisure ||
+          addr.shop ||
+          addr.office ||
+          [addr.road, addr.city||addr.town||addr.village, addr.state].filter(Boolean).join(', ');
+        setLocationField(loc);
       } catch {
-        const loc = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-        lss('lastLocation', loc);
-        if(el) el.innerHTML = `<span style="color:var(--green)">📍 ${loc}</span>`;
+        setLocationField(`${lat.toFixed(4)}, ${lon.toFixed(4)}`);
       }
     },
-    () => { if(el) el.textContent = ''; lss('lastLocation', ''); }
+    () => {
+      const field = document.getElementById('locationField');
+      if (field) field.style.display = 'none';
+      lss('lastLocation', '');
+    },
+    { enableHighAccuracy: true, timeout: 8000 }
   );
 }
 
@@ -541,6 +610,7 @@ function cancelEdit() {
 }
 
 function saveFromEdit() {
+  // carry location forward when editing
   parsed = {
     name: v('e_name'), title: v('e_title'), company: v('e_company'),
     email: [v('e_email')].filter(Boolean), email2: v('e_email2'),
@@ -665,7 +735,7 @@ async function pushToAT(p, note, event, fu, qrRaw) {
     'Event': event||'',
     'Follow Up': !!fu,
     'Date Scanned': new Date().toISOString(),
-    'Location': ls('lastLocation')||'',
+    'Location': (document.getElementById('locationIn')?.value.trim()) || ls('lastLocation') || '',
   };
   if (qrRaw) fields['QR Data'] = qrRaw;
 
