@@ -409,7 +409,6 @@ function handleImg(e) {
     const img = document.getElementById('prevImg');
     img.src = ev.target.result; img.style.display = 'block';
     document.getElementById('scanBtn').style.display = 'flex';
-    getLocation();
     document.getElementById('resultBlock').style.display = 'none';
     document.getElementById('editBlock').style.display = 'none';
     document.getElementById('scanStatus').innerHTML = '';
@@ -449,6 +448,7 @@ async function runScan() {
     document.getElementById('scanStatus').innerHTML = '<span class="pill pill-ok">✓ Extracted</span>';
     document.getElementById('resultBlock').style.display = 'block';
     document.getElementById('editBlock').style.display = 'none';
+    getLocation(); // fire after result is visible so location field shows
   } catch(err) {
     document.getElementById('scanStatus').innerHTML = '<span class="pill pill-err">✕ Failed — try a clearer photo or check your API key</span>';
     console.error(err);
@@ -489,12 +489,20 @@ function setLocationField(val) {
   if (spinner) spinner.textContent = '';
 }
 
+function showLocationDetecting() {
+  const field = document.getElementById('locationField');
+  const input = document.getElementById('locationIn');
+  const spinner = document.getElementById('locSpinner');
+  if (!field || !input) return;
+  field.style.display = 'block';
+  input.value = '';
+  input.placeholder = 'Detecting nearby landmark…';
+  if (spinner) spinner.textContent = '· detecting…';
+}
+
 function getLocation() {
   if (!navigator.geolocation) return;
-  const field = document.getElementById('locationField');
-  const spinner = document.getElementById('locSpinner');
-  if (field) field.style.display = 'block';
-  if (spinner) spinner.textContent = '· detecting…';
+  showLocationDetecting();
 
   navigator.geolocation.getCurrentPosition(
     async pos => {
