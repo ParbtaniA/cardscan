@@ -38,21 +38,23 @@ body { height: 100%; background: var(--bg); font-family: -apple-system, 'SF Pro 
 #setup-overlay {
   position: fixed; inset: 0; z-index: 100;
   background: var(--bg);
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 28px 24px; gap: 0;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-start;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 40px 20px 40px; gap: 0;
 }
-.setup-logo { font-size: 42px; margin-bottom: 12px; }
-.setup-title { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
-.setup-sub { font-size: 14px; color: var(--text2); text-align: center; margin-bottom: 28px; line-height: 1.5; }
-.setup-card { width: 100%; max-width: 400px; background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--rlg); padding: 20px; margin-bottom: 12px; }
-.setup-card-title { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 14px; }
+.setup-logo { font-size: 36px; margin-bottom: 8px; }
+.setup-title { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+.setup-sub { font-size: 13px; color: var(--text2); text-align: center; margin-bottom: 20px; line-height: 1.5; }
+.setup-card { width: 100%; max-width: 480px; background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--rlg); padding: 16px; margin-bottom: 10px; }
+.setup-card-title { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 12px; }
 .setup-field { margin-bottom: 10px; }
 .setup-field label { font-size: 12px; color: var(--text2); font-weight: 500; display: block; margin-bottom: 4px; }
 .setup-field input { width: 100%; padding: 10px 12px; font-size: 15px; border: 0.5px solid var(--border2); border-radius: var(--r); background: var(--bg); color: var(--text); font-family: inherit; outline: none; }
 .setup-field input:focus { border-color: var(--accent); }
 .setup-note { font-size: 12px; color: var(--text3); line-height: 1.5; margin-top: 8px; }
 .setup-note a { color: var(--accent); text-decoration: none; }
-.btn-setup { width: 100%; max-width: 400px; padding: 14px; background: var(--ink); color: #fff; border: none; border-radius: var(--r); font-size: 16px; font-weight: 600; letter-spacing: -0.2px; cursor: pointer; }
+.btn-setup { width: 100%; max-width: 480px; padding: 14px; background: var(--ink); color: #fff; border: none; border-radius: var(--r); font-size: 16px; font-weight: 600; letter-spacing: -0.2px; cursor: pointer; margin-top: 4px; }
 .btn-setup:active { opacity: 0.85; }
 
 /* ── App shell ── */
@@ -121,7 +123,7 @@ input[type=text], input[type=email], input[type=tel], input[type=url], textarea 
 input:focus, textarea:focus { border-color: var(--accent); }
 textarea { resize: none; min-height: 76px; line-height: 1.5; }
 .fields2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.fields2 .fg:first-child { grid-column: 1 / -1; }
+@media (max-width: 380px) { .fields2 { grid-template-columns: 1fr; } }
 
 /* ── Contacts list ── */
 .search-wrap { position: relative; margin-bottom: 12px; }
@@ -255,7 +257,6 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
           <div class="card-label">Edit before saving</div>
           <div class="fg"><label>Full name</label><input type="text" id="e_name"></div>
           <div class="fields2">
-            <div class="fg" style="grid-column:1/-1"><label>Placeholder to keep grid happy</label></div>
             <div class="fg"><label>Title</label><input type="text" id="e_title"></div>
             <div class="fg"><label>Company</label><input type="text" id="e_company"></div>
             <div class="fg"><label>Email</label><input type="email" id="e_email"></div>
