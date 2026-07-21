@@ -248,6 +248,7 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
           </label>
           <button class="btn btn-primary" onclick="saveContact()">💾 Save to Airtable</button>
           <button class="btn btn-secondary" onclick="showEdit()">Edit fields first</button>
+          <button class="btn btn-link" onclick="resetScan()" style="color:var(--red);text-decoration:none;margin-top:4px">✕ Cancel — discard this scan</button>
         </div>
       </div>
 
@@ -269,6 +270,7 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
           <div class="fg"><label>Address</label><input type="text" id="e_address"></div>
           <button class="btn btn-primary" onclick="saveFromEdit()">💾 Save to Airtable</button>
           <button class="btn btn-secondary" onclick="cancelEdit()">← Back</button>
+          <button class="btn btn-link" onclick="resetScan()" style="color:var(--red);text-decoration:none;margin-top:4px">✕ Cancel — discard this scan</button>
         </div>
       </div>
     </div>
@@ -448,6 +450,22 @@ async function runScan() {
   }
   btn.disabled = false;
   btn.innerHTML = '✦ Extract contact details';
+}
+
+function resetScan() {
+  parsed = null; imgB64 = null;
+  document.getElementById('resultBlock').style.display = 'none';
+  document.getElementById('editBlock').style.display = 'none';
+  document.getElementById('prevImg').style.display = 'none';
+  document.getElementById('prevImg').src = '';
+  document.getElementById('scanBtn').style.display = 'none';
+  document.getElementById('scanStatus').innerHTML = '';
+  document.getElementById('noteIn').value = '';
+  document.getElementById('eventIn').value = '';
+  document.getElementById('fuCheck').checked = false;
+  // Reset file input so same card can be re-scanned
+  const inp = document.querySelector('input[type="file"]');
+  if (inp) inp.value = '';
 }
 
 function initials(n) { return (n||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
