@@ -693,6 +693,11 @@ async function testAT() {
 async function loadContacts() {
   const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
   const tok = ls('at_key');
+
+  // Show local cache immediately — never a blank screen
+  const cached = JSON.parse(ls('contacts')||'[]');
+  if (cached.length) { contacts = cached; renderList(); }
+
   if (tok) {
     try {
       const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}?sort[0][field]=Date%20Scanned&sort[0][direction]=desc&maxRecords=150`, {
@@ -702,12 +707,13 @@ async function loadContacts() {
         const data = await res.json();
         contacts = data.records.map(r => ({ _id: r.id, ...r.fields }));
         lss('contacts', JSON.stringify(contacts));
+        renderList();
       }
+      // If read fails (missing scope) silently stay on cached data
     } catch {}
-  } else {
-    contacts = JSON.parse(ls('contacts')||'[]');
   }
-  renderList();
+
+  if (!contacts.length) renderList(); // show empty state if truly nothing
 }
 
 function renderList() {
