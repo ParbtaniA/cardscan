@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CardScan">
+<title>CardScan</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root {
+  --bg: #f5f3ef;
+  --surface: #ffffff;
+  --surface2: #eeebe5;
+  --border: #ddd9d1;
+  --border2: #c8c3b8;
+  --text: #1c1a17;
+  --text2: #6b6459;
+  --text3: #a09890;
+  --ink: #1c1a17;
+  --accent: #c8570a;
+  --accent-bg: #fdf0e8;
+  --accent-border: #f0b990;
+  --green: #2a6649;
+  --green-bg: #e8f5ef;
+  --red: #a3233b;
+  --red-bg: #fdeaed;
+  --r: 10px;
+  --rlg: 16px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { height: 100%; }
+body { height: 100%; background: var(--bg); font-family: -apple-system, 'SF Pro Text', BlinkMacSystemFont, sans-serif; color: var(--text); font-size: 16px; overscroll-behavior: none; }
+
+/* ── Setup overlay ── */
+#setup-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 28px 24px; gap: 0;
+}
+.setup-logo { font-size: 42px; margin-bottom: 12px; }
+.setup-title { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
+.setup-sub { font-size: 14px; color: var(--text2); text-align: center; margin-bottom: 28px; line-height: 1.5; }
+.setup-card { width: 100%; max-width: 400px; background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--rlg); padding: 20px; margin-bottom: 12px; }
+.setup-card-title { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 14px; }
+.setup-field { margin-bottom: 10px; }
+.setup-field label { font-size: 12px; color: var(--text2); font-weight: 500; display: block; margin-bottom: 4px; }
+.setup-field input { width: 100%; padding: 10px 12px; font-size: 15px; border: 0.5px solid var(--border2); border-radius: var(--r); background: var(--bg); color: var(--text); font-family: inherit; outline: none; }
+.setup-field input:focus { border-color: var(--accent); }
+.setup-note { font-size: 12px; color: var(--text3); line-height: 1.5; margin-top: 8px; }
+.setup-note a { color: var(--accent); text-decoration: none; }
+.btn-setup { width: 100%; max-width: 400px; padding: 14px; background: var(--ink); color: #fff; border: none; border-radius: var(--r); font-size: 16px; font-weight: 600; letter-spacing: -0.2px; cursor: pointer; }
+.btn-setup:active { opacity: 0.85; }
+
+/* ── App shell ── */
+.app { display: flex; flex-direction: column; height: 100dvh; }
+
+/* ── Header ── */
+.header { background: var(--surface); border-bottom: 0.5px solid var(--border); padding: 14px 20px 0; position: sticky; top: 0; z-index: 20; }
+.header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.wordmark { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; color: var(--text); }
+.wordmark span { color: var(--accent); }
+.gear-btn { width: 34px; height: 34px; border-radius: 50%; background: var(--surface2); border: none; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.tabs { display: flex; gap: 0; }
+.tab { flex: 1; padding: 9px 4px 11px; font-size: 13px; font-weight: 500; text-align: center; border: none; background: none; color: var(--text3); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Content ── */
+.content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 16px 80px; }
+.section { display: none; }
+.section.active { display: block; }
+
+/* ── Cards ── */
+.card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--rlg); padding: 16px; margin-bottom: 12px; }
+.card-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 12px; }
+
+/* ── Upload zone ── */
+.upload-zone { border: 1.5px dashed var(--border2); border-radius: var(--rlg); padding: 32px 20px; text-align: center; cursor: pointer; background: var(--surface); transition: background 0.12s; }
+.upload-zone:active { background: var(--surface2); }
+.upload-zone input { display: none; }
+.zone-emoji { font-size: 40px; margin-bottom: 10px; display: block; }
+.zone-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.zone-sub { font-size: 13px; color: var(--text3); }
+.preview-img { width: 100%; border-radius: 10px; border: 0.5px solid var(--border); margin-top: 12px; max-height: 180px; object-fit: cover; display: none; }
+
+/* ── Buttons ── */
+.btn { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 13px; font-size: 15px; font-weight: 600; border-radius: var(--r); border: none; cursor: pointer; letter-spacing: -0.1px; }
+.btn:active { opacity: 0.82; transform: scale(0.99); }
+.btn-primary { background: var(--ink); color: #fff; margin-top: 10px; }
+.btn-primary:disabled { opacity: 0.38; pointer-events: none; }
+.btn-secondary { background: var(--surface2); color: var(--text); border: 0.5px solid var(--border2); margin-top: 8px; }
+.btn-link { background: none; color: var(--text2); font-size: 14px; font-weight: 500; text-decoration: underline; margin-top: 6px; }
+
+/* ── Pills ── */
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 20px; margin-top: 8px; }
+.pill-ok { background: var(--green-bg); color: var(--green); }
+.pill-warn { background: var(--accent-bg); color: var(--accent); }
+.pill-err { background: var(--red-bg); color: var(--red); }
+
+/* ── Result card ── */
+.contact-header { display: flex; align-items: center; gap: 13px; margin-bottom: 14px; }
+.avatar { width: 50px; height: 50px; border-radius: 50%; background: var(--surface2); border: 0.5px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; color: var(--text2); flex-shrink: 0; }
+.con-name { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+.con-sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
+.rule { border: none; border-top: 0.5px solid var(--border); margin: 12px 0; }
+.field-row { display: flex; align-items: flex-start; gap: 10px; padding: 5px 0; }
+.fi { font-size: 16px; width: 22px; flex-shrink: 0; padding-top: 1px; }
+.fl { font-size: 11px; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+.fv { font-size: 14px; color: var(--text); margin-top: 1px; }
+
+/* ── Form fields ── */
+.fg { margin-bottom: 10px; }
+.fg label { font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 5px; }
+input[type=text], input[type=email], input[type=tel], input[type=url], textarea {
+  width: 100%; padding: 11px 13px; font-size: 15px; border: 0.5px solid var(--border2);
+  border-radius: var(--r); background: var(--bg); color: var(--text); font-family: inherit; outline: none;
+}
+input:focus, textarea:focus { border-color: var(--accent); }
+textarea { resize: none; min-height: 76px; line-height: 1.5; }
+.fields2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fields2 .fg:first-child { grid-column: 1 / -1; }
+
+/* ── Contacts list ── */
+.search-wrap { position: relative; margin-bottom: 12px; }
+.search-wrap .si { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-size: 15px; pointer-events: none; }
+.search-wrap input { padding-left: 38px; }
+.ci { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-bottom: 0.5px solid var(--border); cursor: pointer; }
+.ci:last-child { border-bottom: none; }
+.ci-av { width: 42px; height: 42px; border-radius: 50%; background: var(--surface2); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: var(--text2); flex-shrink: 0; }
+.ci-name { font-size: 15px; font-weight: 600; }
+.ci-sub { font-size: 13px; color: var(--text2); margin-top: 1px; }
+.ci-tag { font-size: 11px; font-weight: 500; background: var(--accent-bg); color: var(--accent); padding: 2px 7px; border-radius: 10px; display: inline-block; margin-top: 3px; }
+.ci-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-left: auto; }
+
+/* ── Detail view ── */
+#contactDetail { display: none; }
+.back-btn { display: flex; align-items: center; gap: 5px; font-size: 15px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0 0 14px; font-weight: 500; }
+
+/* ── QR ── */
+#qr-reader { border-radius: var(--r); overflow: hidden; }
+#qr-reader video { border-radius: var(--r); }
+.qr-raw { background: var(--surface2); border-radius: var(--r); padding: 11px 13px; font-size: 12px; color: var(--text2); word-break: break-all; margin-top: 10px; max-height: 72px; overflow-y: auto; }
+#myqr-wrap { display: flex; justify-content: center; padding: 8px 0 4px; }
+#myqr-wrap canvas, #myqr-wrap img { border-radius: 8px; }
+
+/* ── Toast ── */
+.toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 22px; font-size: 14px; font-weight: 600; z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.2s; white-space: nowrap; letter-spacing: -0.1px; }
+.toast.show { opacity: 1; }
+
+/* ── Empty ── */
+.empty { text-align: center; padding: 52px 20px; color: var(--text3); }
+.empty-icon { font-size: 44px; display: block; margin-bottom: 10px; }
+.empty-text { font-size: 15px; }
+
+/* ── Spinner ── */
+.spin { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff; border-radius: 50%; animation: rot 0.7s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- ════════ SETUP OVERLAY ════════ -->
+<div id="setup-overlay">
+  <div class="setup-logo">📇</div>
+  <div class="setup-title">CardScan</div>
+  <div class="setup-sub">Enter your keys once — stored only on this device.</div>
+
+  <div class="setup-card">
+    <div class="setup-card-title">Anthropic API Key</div>
+    <div class="setup-field">
+      <label>API Key</label>
+      <input type="text" id="s_anth" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+    </div>
+    <div class="setup-note">Get yours at <a href="https://platform.claude.com/settings/keys" target="_blank">platform.claude.com/settings/keys</a></div>
+  </div>
+
+  <div class="setup-card">
+    <div class="setup-card-title">Airtable</div>
+    <div class="setup-field">
+      <label>API Token</label>
+      <input type="text" id="s_at" placeholder="patXXXX…" autocomplete="off" spellcheck="false" value="">
+    </div>
+    <div class="setup-note">Base ID: <code>appNWqtWKEQaVa97F</code> · Table: <code>tbl20LKbf0JODZE9h</code> (pre-filled)</div>
+  </div>
+
+  <button class="btn-setup" onclick="finishSetup()">Save & open app</button>
+</div>
+
+<!-- ════════ APP ════════ -->
+<div class="app" id="appShell" style="display:none">
+  <div class="header">
+    <div class="header-top">
+      <div class="wordmark">Card<span>Scan</span></div>
+      <button class="gear-btn" onclick="openSettings()">⚙</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active" onclick="go('scan',this)">📷 Scan</button>
+      <button class="tab" onclick="go('qr',this)">⬛ QR</button>
+      <button class="tab" onclick="go('contacts',this)">👥 Contacts</button>
+    </div>
+  </div>
+  <div class="content">
+
+    <!-- ── SCAN ── -->
+    <div id="scan" class="section active">
+      <div class="card">
+        <div class="card-label">Business card image</div>
+        <label class="upload-zone">
+          <span class="zone-emoji">📇</span>
+          <div class="zone-title">Tap to photograph or upload</div>
+          <div class="zone-sub">Works with photos, screenshots or files</div>
+          <input type="file" accept="image/*" capture="environment" onchange="handleImg(event)">
+        </label>
+        <img id="prevImg" class="preview-img" alt="Card preview">
+        <div id="scanStatus"></div>
+        <button class="btn btn-primary" id="scanBtn" style="display:none" onclick="runScan()">
+          ✦ Extract contact details
+        </button>
+      </div>
+
+      <div id="resultBlock" style="display:none">
+        <div class="card">
+          <div class="card-label">Extracted</div>
+          <div class="contact-header">
+            <div class="avatar" id="rAvatar"></div>
+            <div><div class="con-name" id="rName"></div><div class="con-sub" id="rSub"></div></div>
+          </div>
+          <hr class="rule">
+          <div id="rFields"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Add context</div>
+          <div class="fg">
+            <label>Your note</label>
+            <textarea id="noteIn" placeholder="What did you talk about? Follow-up needed? When?"></textarea>
+          </div>
+          <div class="fg">
+            <label>Event</label>
+            <input type="text" id="eventIn" placeholder="e.g. TechConnect 2025">
+          </div>
+          <label style="display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text2);cursor:pointer;padding:4px 0">
+            <input type="checkbox" id="fuCheck" style="width:auto;accent-color:var(--accent)"> Mark for follow-up
+          </label>
+          <button class="btn btn-primary" onclick="saveContact()">💾 Save to Airtable</button>
+          <button class="btn btn-secondary" onclick="showEdit()">Edit fields first</button>
+        </div>
+      </div>
+
+      <!-- Edit form -->
+      <div id="editBlock" style="display:none">
+        <div class="card">
+          <div class="card-label">Edit before saving</div>
+          <div class="fg"><label>Full name</label><input type="text" id="e_name"></div>
+          <div class="fields2">
+            <div class="fg" style="grid-column:1/-1"><label>Placeholder to keep grid happy</label></div>
+            <div class="fg"><label>Title</label><input type="text" id="e_title"></div>
+            <div class="fg"><label>Company</label><input type="text" id="e_company"></div>
+            <div class="fg"><label>Email</label><input type="email" id="e_email"></div>
+            <div class="fg"><label>Email 2</label><input type="email" id="e_email2"></div>
+            <div class="fg"><label>Phone</label><input type="tel" id="e_phone"></div>
+            <div class="fg"><label>Phone 2</label><input type="tel" id="e_phone2"></div>
+          </div>
+          <div class="fg"><label>Website</label><input type="url" id="e_website"></div>
+          <div class="fg"><label>LinkedIn</label><input type="url" id="e_linkedin"></div>
+          <div class="fg"><label>Address</label><input type="text" id="e_address"></div>
+          <button class="btn btn-primary" onclick="saveFromEdit()">💾 Save to Airtable</button>
+          <button class="btn btn-secondary" onclick="cancelEdit()">← Back</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── QR ── -->
+    <div id="qr" class="section">
+      <div class="card">
+        <div class="card-label">Scan a QR code</div>
+        <div id="qr-reader" style="width:100%"></div>
+        <div id="qrResult" style="display:none">
+          <div class="qr-raw" id="qrRaw"></div>
+          <div id="qrPill"></div>
+          <button class="btn btn-primary" id="qrSaveBtn" onclick="saveFromQR()" style="display:none">💾 Save contact</button>
+          <button class="btn btn-secondary" onclick="resetQR()">Scan another</button>
+        </div>
+        <button class="btn btn-secondary" id="startQRBtn" onclick="startQR()" style="margin-top:10px">📷 Start camera</button>
+        <button class="btn btn-link" id="stopQRBtn" onclick="stopQR()" style="display:none">Stop camera</button>
+      </div>
+
+      <div class="card">
+        <div class="card-label">My QR code</div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Others scan this to add you as a contact instantly.</p>
+        <div id="myqr-wrap"></div>
+        <div id="myqr-empty" style="text-align:center;padding:18px;color:var(--text3);font-size:13px">Your contact details aren't set yet — tap ⚙ Settings.</div>
+        <button class="btn btn-secondary" id="dlQR" onclick="downloadQR()" style="display:none;margin-top:10px">⬇ Save QR image</button>
+      </div>
+    </div>
+
+    <!-- ── CONTACTS ── -->
+    <div id="contacts" class="section">
+      <div id="conListWrap">
+        <div class="search-wrap card" style="padding:0;overflow:hidden;border-radius:var(--rlg)">
+          <span class="si">🔍</span>
+          <input type="text" id="searchIn" placeholder="Search…" oninput="renderList()" style="border:none;border-radius:var(--rlg);background:var(--surface)">
+        </div>
+        <div class="card" id="conInner" style="padding:0 16px"></div>
+      </div>
+      <div id="contactDetail">
+        <button class="back-btn" onclick="closeDetail()">‹ Back</button>
+        <div id="detailInner"></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /app -->
+
+<!-- Settings modal -->
+<div id="settingsModal" style="display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,0.5);padding:20px;align-items:flex-end">
+  <div style="background:var(--surface);border-radius:20px;padding:20px;width:100%;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:17px;font-weight:700">Settings</div>
+      <button onclick="closeSettings()" style="background:var(--surface2);border:none;border-radius:50%;width:30px;height:30px;font-size:16px;cursor:pointer">✕</button>
+    </div>
+    <div class="card-label">My contact details (for QR)</div>
+    <div class="fg"><label>Full name</label><input type="text" id="my_name" value="Ayaz Parbtani"></div>
+    <div class="fg"><label>Title</label><input type="text" id="my_title" value="Chief Operations Consultant"></div>
+    <div class="fg"><label>Company</label><input type="text" id="my_company" value="VenzAura LLC / Reliance Trading LLC"></div>
+    <div class="fg"><label>Email</label><input type="email" id="my_email" value="ayaz@venzaura.com"></div>
+    <div class="fg"><label>Email 2</label><input type="email" id="my_email2" value="wholesale@reliance-trading.net"></div>
+    <div class="fg"><label>Phone</label><input type="tel" id="my_phone" value="+13058047761"></div>
+    <div class="fg"><label>Website</label><input type="url" id="my_website" value=""></div>
+    <div class="fg"><label>Address</label><input type="text" id="my_address" value="3054 NW 72nd Ave, Miami FL 33122"></div>
+    <button class="btn btn-primary" onclick="saveMyCard()" style="margin-top:4px">Save & regenerate QR</button>
+
+    <hr class="rule" style="margin:18px 0">
+    <div class="card-label">API Keys</div>
+    <div class="fg"><label>Anthropic key</label><input type="text" id="cfg_anth" autocomplete="off" spellcheck="false"></div>
+    <div class="fg"><label>Airtable token</label><input type="text" id="cfg_at" autocomplete="off" spellcheck="false"></div>
+    <button class="btn btn-secondary" onclick="saveKeys()">Save keys</button>
+    <button class="btn btn-secondary" onclick="testAT()" style="margin-top:6px">Test Airtable connection</button>
+    <div id="atStatus"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────
+// State
+// ─────────────────────────────────────────
+let parsed = null, imgB64 = null, qrParsed = null, qrScanner = null, contacts = [];
+
+// ─────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const anth = ls('anth_key'), at = ls('at_key');
+  if (anth && at) {
+    document.getElementById('setup-overlay').style.display = 'none';
+    document.getElementById('appShell').style.display = 'flex';
+    loadMyCard();
+    genMyQR();
+  } else {
+    // Pre-fill Airtable token we already generated
+
+  }
+});
+
+function finishSetup() {
+  const anth = document.getElementById('s_anth').value.trim();
+  const at   = document.getElementById('s_at').value.trim();
+  if (!anth) { toast('Paste your Anthropic API key first'); return; }
+  if (!at)   { toast('Paste your Airtable token first'); return; }
+  lss('anth_key', anth);
+  lss('at_key', at);
+  document.getElementById('setup-overlay').style.display = 'none';
+  document.getElementById('appShell').style.display = 'flex';
+  loadMyCard();
+  genMyQR();
+}
+
+// ─────────────────────────────────────────
+// Nav
+// ─────────────────────────────────────────
+function go(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (id === 'contacts') { loadContacts(); }
+  if (id === 'qr') { genMyQR(); }
+}
+
+// ─────────────────────────────────────────
+// Image scan
+// ─────────────────────────────────────────
+function handleImg(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    imgB64 = ev.target.result.split(',')[1];
+    const img = document.getElementById('prevImg');
+    img.src = ev.target.result; img.style.display = 'block';
+    document.getElementById('scanBtn').style.display = 'flex';
+    document.getElementById('resultBlock').style.display = 'none';
+    document.getElementById('editBlock').style.display = 'none';
+    document.getElementById('scanStatus').innerHTML = '';
+  };
+  r.readAsDataURL(file);
+}
+
+async function runScan() {
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spin"></div> Scanning…';
+  document.getElementById('scanStatus').innerHTML = '<span class="pill pill-warn">⏳ Extracting…</span>';
+
+  const prompt = `Extract structured contact data from this business card image. Return ONLY valid JSON, nothing else:
+{"name":"full name or null","title":"job title or null","company":"company name or null","email":["email1"] or [],"email2":"second email or null","phone":"digits and dashes only no country code or null","phone2":"second phone or null","website":"url or null","linkedin":"linkedin url or null","address":"address or null","other":"any extra info or null"}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ls('anth_key'),
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{
+        role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imgB64 } },
+          { type: 'text', text: prompt }
+        ]
+      }]})
+    });
+    const data = await res.json();
+    const raw = data.content.map(b => b.text||'').join('');
+    parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    renderResult(parsed);
+    document.getElementById('scanStatus').innerHTML = '<span class="pill pill-ok">✓ Extracted</span>';
+    document.getElementById('resultBlock').style.display = 'block';
+    document.getElementById('editBlock').style.display = 'none';
+  } catch(err) {
+    document.getElementById('scanStatus').innerHTML = '<span class="pill pill-err">✕ Failed — try a clearer photo or check your API key</span>';
+    console.error(err);
+  }
+  btn.disabled = false;
+  btn.innerHTML = '✦ Extract contact details';
+}
+
+function initials(n) { return (n||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+
+function renderResult(p) {
+  document.getElementById('rAvatar').textContent = initials(p.name);
+  document.getElementById('rName').textContent = p.name || 'Unknown';
+  document.getElementById('rSub').textContent = [p.title, p.company].filter(Boolean).join(' · ');
+  const emails = Array.isArray(p.email) ? p.email : (p.email ? [p.email] : []);
+  if (p.email2) emails.push(p.email2);
+  let h = '';
+  emails.forEach(e  => h += field('✉️','Email',e));
+  if (p.phone)   h += field('📞','Phone',p.phone);
+  if (p.phone2)  h += field('📞','Phone 2',p.phone2);
+  if (p.website) h += field('🌐','Website',p.website);
+  if (p.linkedin)h += field('🔗','LinkedIn',p.linkedin);
+  if (p.address) h += field('📍','Address',p.address);
+  if (p.other)   h += field('ℹ','Other',p.other);
+  document.getElementById('rFields').innerHTML = h;
+}
+
+function field(ico, lbl, val) {
+  return `<div class="field-row"><span class="fi">${ico}</span><div><div class="fl">${lbl}</div><div class="fv">${val}</div></div></div>`;
+}
+
+function showEdit() {
+  if (!parsed) return;
+  const emails = Array.isArray(parsed.email) ? parsed.email : (parsed.email ? [parsed.email] : []);
+  document.getElementById('e_name').value    = parsed.name||'';
+  document.getElementById('e_title').value   = parsed.title||'';
+  document.getElementById('e_company').value = parsed.company||'';
+  document.getElementById('e_email').value   = emails[0]||'';
+  document.getElementById('e_email2').value  = emails[1]||parsed.email2||'';
+  document.getElementById('e_phone').value   = parsed.phone||'';
+  document.getElementById('e_phone2').value  = parsed.phone2||'';
+  document.getElementById('e_website').value = parsed.website||'';
+  document.getElementById('e_linkedin').value= parsed.linkedin||'';
+  document.getElementById('e_address').value = parsed.address||'';
+  document.getElementById('editBlock').style.display = 'block';
+  document.getElementById('resultBlock').style.display = 'none';
+}
+
+function cancelEdit() {
+  document.getElementById('editBlock').style.display = 'none';
+  document.getElementById('resultBlock').style.display = 'block';
+}
+
+function saveFromEdit() {
+  parsed = {
+    name: v('e_name'), title: v('e_title'), company: v('e_company'),
+    email: [v('e_email')].filter(Boolean), email2: v('e_email2'),
+    phone: v('e_phone'), phone2: v('e_phone2'),
+    website: v('e_website'), linkedin: v('e_linkedin'), address: v('e_address'),
+  };
+  saveContact();
+}
+
+// ─────────────────────────────────────────
+// QR
+// ─────────────────────────────────────────
+function startQR() {
+  document.getElementById('startQRBtn').style.display = 'none';
+  document.getElementById('stopQRBtn').style.display = 'flex';
+  document.getElementById('qrResult').style.display = 'none';
+  qrScanner = new Html5Qrcode('qr-reader');
+  qrScanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 240, height: 240 } },
+    decoded => { stopQR(); handleQR(decoded); },
+    () => {}
+  ).catch(() => toast('Camera access denied'));
+}
+
+function stopQR() {
+  document.getElementById('startQRBtn').style.display = 'flex';
+  document.getElementById('stopQRBtn').style.display = 'none';
+  if (qrScanner) { qrScanner.stop().catch(()=>{}); qrScanner = null; }
+}
+
+function handleQR(decoded) {
+  document.getElementById('qrRaw').textContent = decoded;
+  document.getElementById('qrResult').style.display = 'block';
+  if (decoded.startsWith('BEGIN:VCARD')) {
+    qrParsed = parseVCard(decoded);
+    document.getElementById('qrPill').innerHTML = '<span class="pill pill-ok">✓ vCard detected</span>';
+    document.getElementById('qrSaveBtn').style.display = 'flex';
+  } else {
+    qrParsed = { name: null, other: decoded };
+    document.getElementById('qrPill').innerHTML = '<span class="pill pill-warn">Raw QR — saved as note</span>';
+    document.getElementById('qrSaveBtn').style.display = 'flex';
+  }
+}
+
+function parseVCard(v) {
+  const g = k => { const m = v.match(new RegExp(k+'[^:]*:([^\\n]+)','i')); return m ? m[1].trim() : null; };
+  return { name: g('FN'), title: g('TITLE'), company: g('ORG'), email: [g('EMAIL')].filter(Boolean), phone: g('TEL'), website: g('URL'), address: g('ADR'), qrData: v };
+}
+
+function resetQR() { document.getElementById('qrResult').style.display = 'none'; qrParsed = null; }
+
+async function saveFromQR() {
+  if (!qrParsed) return;
+  await pushToAT(qrParsed, '', '', false, document.getElementById('qrRaw').textContent);
+}
+
+// ─────────────────────────────────────────
+// My QR
+// ─────────────────────────────────────────
+function genMyQR() {
+  const c = JSON.parse(ls('myCard')||'{}');
+  const wrap = document.getElementById('myqr-wrap');
+  const empty = document.getElementById('myqr-empty');
+  const dl = document.getElementById('dlQR');
+  if (!c.name && !c.email) { wrap.innerHTML=''; empty.style.display='block'; dl.style.display='none'; return; }
+  const vcard = ['BEGIN:VCARD','VERSION:3.0',
+    c.name ? `FN:${c.name}` : '',
+    c.company ? `ORG:${c.company}` : '',
+    c.title ? `TITLE:${c.title}` : '',
+    c.email ? `EMAIL:${c.email}` : '',
+    c.email2 ? `EMAIL:${c.email2}` : '',
+    c.phone ? `TEL:${c.phone}` : '',
+    c.website ? `URL:${c.website}` : '',
+    c.address ? `ADR:;;${c.address}` : '',
+    'END:VCARD'
+  ].filter(Boolean).join('\n');
+  wrap.innerHTML = '';
+  empty.style.display = 'none';
+  new QRCode(wrap, { text: vcard, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+  dl.style.display = 'block';
+}
+
+function downloadQR() {
+  const canvas = document.querySelector('#myqr-wrap canvas');
+  if (!canvas) return;
+  const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = 'my-qr.png'; a.click();
+}
+
+// ─────────────────────────────────────────
+// Airtable
+// ─────────────────────────────────────────
+async function saveContact() {
+  if (!parsed) return;
+  await pushToAT(parsed, v('noteIn'), v('eventIn'), document.getElementById('fuCheck').checked, null);
+}
+
+async function pushToAT(p, note, event, fu, qrRaw) {
+  const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
+  const tok = ls('at_key');
+  if (!tok) { toast('Add Airtable token in Settings'); return; }
+  const emails = Array.isArray(p.email) ? p.email : (p.email ? [p.email] : []);
+
+  // Clean phone: keep only digits and dashes, strip country code prefix
+  const cleanPhone = (ph) => {
+    if (!ph) return '';
+    return ph.replace(/[^\d\-]/g, '').replace(/^1\-?/, '');
+  };
+
+  const fields = {
+    'Full Name': p.name||'',
+    'Job Title': p.title||'',
+    'Company': p.company||'',
+    'Email': emails[0]||'',
+    'Email 2': emails[1]||p.email2||'',
+    'Phone': cleanPhone(p.phone),
+    'Phone 2': cleanPhone(p.phone2||''),
+    'Website': p.website||'',
+    'LinkedIn': p.linkedin||'',
+    'Address': p.address||'',
+    'Note': note||'',
+    'Event': event||'',
+    'Follow Up': !!fu,
+    'Date Scanned': new Date().toISOString(),
+  };
+  if (qrRaw) fields['QR Data'] = qrRaw;
+
+  // Remove blank typed fields
+  ['Email','Email 2','Website','LinkedIn'].forEach(k => { if (!fields[k]) delete fields[k]; });
+  ['Phone','Phone 2'].forEach(k => { if (!fields[k]) delete fields[k]; });
+
+  try {
+    const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    // Cache locally
+    const local = JSON.parse(ls('contacts')||'[]');
+    local.unshift({ ...fields, _id: Date.now() });
+    lss('contacts', JSON.stringify(local.slice(0, 300)));
+    toast('✓ Contact saved');
+    // Reset UI
+    document.getElementById('resultBlock').style.display = 'none';
+    document.getElementById('editBlock').style.display = 'none';
+    document.getElementById('prevImg').style.display = 'none';
+    document.getElementById('scanBtn').style.display = 'none';
+    document.getElementById('scanStatus').innerHTML = '';
+    document.getElementById('noteIn').value = '';
+    document.getElementById('eventIn').value = '';
+    document.getElementById('fuCheck').checked = false;
+    document.getElementById('qrResult').style.display = 'none';
+    parsed = null; qrParsed = null;
+  } catch(e) {
+    toast('Save failed — check Settings'); console.error(e);
+  }
+}
+
+async function testAT() {
+  const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
+  const tok = v('cfg_at') || ls('at_key');
+  if (!tok) { document.getElementById('atStatus').innerHTML = '<span class="pill pill-err">No token</span>'; return; }
+  try {
+    const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}?maxRecords=1`, {
+      headers: { 'Authorization': `Bearer ${tok}` }
+    });
+    document.getElementById('atStatus').innerHTML = res.ok
+      ? '<span class="pill pill-ok">✓ Connected</span>'
+      : '<span class="pill pill-err">✕ Check token</span>';
+  } catch { document.getElementById('atStatus').innerHTML = '<span class="pill pill-err">✕ Failed</span>'; }
+}
+
+// ─────────────────────────────────────────
+// Contacts list
+// ─────────────────────────────────────────
+async function loadContacts() {
+  const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
+  const tok = ls('at_key');
+  if (tok) {
+    try {
+      const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}?sort[0][field]=Date%20Scanned&sort[0][direction]=desc&maxRecords=150`, {
+        headers: { 'Authorization': `Bearer ${tok}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        contacts = data.records.map(r => ({ _id: r.id, ...r.fields }));
+        lss('contacts', JSON.stringify(contacts));
+      }
+    } catch {}
+  } else {
+    contacts = JSON.parse(ls('contacts')||'[]');
+  }
+  renderList();
+}
+
+function renderList() {
+  const q = (document.getElementById('searchIn')?.value||'').toLowerCase();
+  const filtered = contacts.filter(c =>
+    !q || (c['Full Name']||'').toLowerCase().includes(q) ||
+    (c['Company']||'').toLowerCase().includes(q) ||
+    (c['Email']||'').toLowerCase().includes(q)
+  );
+  const inner = document.getElementById('conInner');
+  if (!filtered.length) {
+    inner.innerHTML = `<div class="empty"><span class="empty-icon">👥</span><div class="empty-text">${q?'No matches':'No contacts yet'}</div></div>`;
+    return;
+  }
+  inner.innerHTML = filtered.map((c,i) => `
+    <div class="ci" data-i="${i}">
+      <div class="ci-av">${initials(c['Full Name'])}</div>
+      <div style="flex:1;min-width:0">
+        <div class="ci-name">${c['Full Name']||'Unknown'}</div>
+        <div class="ci-sub">${[c['Job Title'],c['Company']].filter(Boolean).join(' · ')||''}</div>
+        ${c['Event']?`<span class="ci-tag">${c['Event']}</span>`:''}
+      </div>
+      ${c['Follow Up']?'<div class="ci-dot"></div>':''}
+    </div>
+  `).join('');
+  inner.querySelectorAll('.ci').forEach((el,i) => el.onclick = () => openDetail(filtered[i]));
+}
+
+function openDetail(c) {
+  document.getElementById('conListWrap').style.display = 'none';
+  document.getElementById('contactDetail').style.display = 'block';
+  const rows = [
+    c['Email']   && ['✉️','Email',c['Email']],
+    c['Email 2'] && ['✉️','Email 2',c['Email 2']],
+    c['Phone']   && ['📞','Phone',c['Phone']],
+    c['Phone 2'] && ['📞','Phone 2',c['Phone 2']],
+    c['Website'] && ['🌐','Website',c['Website']],
+    c['LinkedIn']&& ['🔗','LinkedIn',c['LinkedIn']],
+    c['Address'] && ['📍','Address',c['Address']],
+    c['Event']   && ['📅','Event',c['Event']],
+    c['Note']    && ['📝','Note',c['Note']],
+    c['Date Scanned'] && ['🕐','Scanned', new Date(c['Date Scanned']).toLocaleDateString()],
+  ].filter(Boolean);
+  document.getElementById('detailInner').innerHTML = `
+    <div class="card">
+      <div class="contact-header">
+        <div class="avatar">${initials(c['Full Name'])}</div>
+        <div>
+          <div class="con-name">${c['Full Name']||'Unknown'}</div>
+          <div class="con-sub">${[c['Job Title'],c['Company']].filter(Boolean).join(' · ')||''}</div>
+          ${c['Follow Up']?'<span class="pill pill-warn" style="margin-top:6px">⚡ Follow up</span>':''}
+        </div>
+      </div>
+      <hr class="rule">
+      ${rows.map(([ico,lbl,val])=>field(ico,lbl,val)).join('')}
+    </div>`;
+}
+
+function closeDetail() {
+  document.getElementById('conListWrap').style.display = 'block';
+  document.getElementById('contactDetail').style.display = 'none';
+}
+
+// ─────────────────────────────────────────
+// Settings
+// ─────────────────────────────────────────
+function openSettings() {
+  loadMyCard();
+  document.getElementById('cfg_anth').value = ls('anth_key')||'';
+  document.getElementById('cfg_at').value   = ls('at_key')||'';
+  document.getElementById('settingsModal').style.display = 'flex';
+}
+function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
+
+function saveMyCard() {
+  const card = {};
+  ['name','title','company','email','email2','phone','website','address'].forEach(f => {
+    card[f] = document.getElementById('my_'+f)?.value.trim()||'';
+  });
+  lss('myCard', JSON.stringify(card));
+  genMyQR();
+  toast('QR updated');
+}
+
+function loadMyCard() {
+  const card = JSON.parse(ls('myCard')||'{}');
+  // Pre-populate with Ayaz's details if nothing saved yet
+  const defaults = {
+    name: 'Ayaz Parbtani', title: 'Chief Operations Consultant',
+    company: 'VenzAura LLC / Reliance Trading LLC',
+    email: 'ayaz@venzaura.com', email2: 'wholesale@reliance-trading.net',
+    phone: '+13058047761', website: '', address: '3054 NW 72nd Ave, Miami FL 33122'
+  };
+  ['name','title','company','email','email2','phone','website','address'].forEach(f => {
+    const el = document.getElementById('my_'+f);
+    if (el) el.value = card[f] !== undefined ? card[f] : (defaults[f]||'');
+  });
+  if (!ls('myCard')) lss('myCard', JSON.stringify(defaults));
+}
+
+function saveKeys() {
+  lss('anth_key', v('cfg_anth'));
+  lss('at_key', v('cfg_at'));
+  toast('Keys saved');
+}
+
+// ─────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────
+function ls(k)       { try { return localStorage.getItem(k); } catch { return null; } }
+function lss(k, val) { try { localStorage.setItem(k, val); } catch {} }
+function v(id)       { return (document.getElementById(id)?.value||'').trim(); }
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2600);
+}
+</script>
+</body>
+</html>
