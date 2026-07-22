@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CardScan diagnostics</title>
+<style>
+  :root { --bg:#f5f3ef; --card:#fff; --bd:#ddd9d1; --tx:#1c1a17; --t2:#6b6459; --t3:#a09890;
+          --ok:#2a6649; --okbg:#e8f5ef; --bad:#a3233b; --badbg:#fdeaed; --warn:#c8570a; --warnbg:#fdf0e8; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--tx); font:16px -apple-system,BlinkMacSystemFont,sans-serif; padding:16px; max-width:520px; margin:0 auto; }
+  h1 { font-size:20px; font-weight:700; margin-bottom:4px; }
+  .sub { font-size:13px; color:var(--t2); margin-bottom:16px; line-height:1.5; }
+  .card { background:var(--card); border:0.5px solid var(--bd); border-radius:14px; padding:14px; margin-bottom:12px; }
+  .lbl { font-size:11px; font-weight:600; color:var(--t3); text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
+  .row { display:flex; gap:10px; padding:7px 0; border-bottom:0.5px solid var(--bd); font-size:14px; align-items:flex-start; }
+  .row:last-child { border-bottom:none; }
+  .k { color:var(--t2); flex:0 0 44%; }
+  .v { flex:1; word-break:break-word; font-weight:500; }
+  .pill { display:inline-block; font-size:12px; font-weight:600; padding:2px 9px; border-radius:20px; }
+  .p-ok { background:var(--okbg); color:var(--ok); }
+  .p-bad { background:var(--badbg); color:var(--bad); }
+  .p-warn { background:var(--warnbg); color:var(--warn); }
+  button { width:100%; padding:13px; font-size:15px; font-weight:600; border:none; border-radius:10px;
+           background:var(--tx); color:#fff; cursor:pointer; margin-top:8px; }
+  button.sec { background:#eeebe5; color:var(--tx); border:0.5px solid var(--bd); }
+  video { width:100%; border-radius:10px; background:#000; margin-top:10px; display:none; }
+  #out { font:12px ui-monospace,Menlo,monospace; background:#eeebe5; border-radius:10px; padding:12px;
+         white-space:pre-wrap; word-break:break-word; margin-top:10px; display:none; line-height:1.5; }
+  .verdict { font-size:14px; line-height:1.6; padding:12px; border-radius:10px; margin-top:10px; }
+</style>
+</head>
+<body>
+<h1>CardScan diagnostics</h1>
+<div class="sub">Run every test, then tap <strong>Copy report</strong> and send it over.</div>
+
+<div class="card">
+  <div class="lbl">Environment</div>
+  <div id="env"></div>
+</div>
+
+<div class="card">
+  <div class="lbl">Test 1 · File picker</div>
+  <div class="sub" style="margin:0 0 10px">Should open a menu with Take Photo and Photo Library.</div>
+  <label class="sec" style="display:block;padding:13px;text-align:center;border-radius:10px;background:#eeebe5;border:0.5px solid var(--bd);font-weight:600;cursor:pointer">
+    Open file picker
+    <input type="file" accept="image/*" onchange="gotFile(event)" style="display:none">
+  </label>
+  <div id="fileResult"></div>
+</div>
+
+<div class="card">
+  <div class="lbl">Test 2 · Live camera</div>
+  <div class="sub" style="margin:0 0 10px">Should show a moving picture below, not black.</div>
+  <button onclick="testCam()">Start live camera</button>
+  <button class="sec" onclick="stopCam()">Stop</button>
+  <video id="vid" playsinline autoplay muted></video>
+  <div id="camResult"></div>
+</div>
+
+<div class="card">
+  <div class="lbl">Report</div>
+  <button onclick="copyReport()">Copy report</button>
+  <div id="out"></div>
+</div>
+
+<script>
+const R = {};
+function pill(ok, txt) {
+  const cls = ok === true ? 'p-ok' : ok === false ? 'p-bad' : 'p-warn';
+  return '<span class="pill ' + cls + '">' + txt + '</span>';
+}
+function row(k, v) { return '<div class="row"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
+
+const ua = navigator.userAgent;
+const standalone = window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+const iosMatch = ua.match(/OS (\d+)[_.](\d+)/);
+R.userAgent = ua;
+R.standalone = standalone;
+R.secureContext = window.isSecureContext;
+R.protocol = location.protocol;
+R.hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+R.iosVersion = iosMatch ? iosMatch[1] + '.' + iosMatch[2] : 'n/a';
+
+document.getElementById('env').innerHTML =
+  row('Running as', standalone ? pill(false, 'Home-screen app') : pill(true, 'Browser tab')) +
+  row('Secure context', window.isSecureContext ? pill(true, 'yes') : pill(false, 'NO — camera blocked')) +
+  row('Protocol', location.protocol) +
+  row('iOS version', R.iosVersion) +
+  row('getUserMedia API', R.hasMediaDevices ? pill(true, 'present') : pill(false, 'missing')) +
+  row('Device', /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : 'Other');
+
+function gotFile(e) {
+  const f = e.target.files[0];
+  const el = document.getElementById('fileResult');
+  if (!f) {
+    R.filePicker = 'no file returned';
+    el.innerHTML = '<div class="verdict" style="background:var(--badbg);color:var(--bad)">No file came back. The picker opened but returned nothing.</div>';
+    return;
+  }
+  R.filePicker = 'ok';
+  R.fileSize = f.size;
+  R.fileType = f.type;
+  const rd = new FileReader();
+  rd.onload = ev => {
+    // Measure average brightness to detect an all-black capture
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      const s = 40; cv.width = s; cv.height = s;
+      const cx = cv.getContext('2d');
+      cx.drawImage(img, 0, 0, s, s);
+      const d = cx.getImageData(0, 0, s, s).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i+1] + d[i+2]) / 3;
+      const bright = Math.round(sum / (d.length / 4));
+      R.imageBrightness = bright;
+      R.imageDims = img.width + 'x' + img.height;
+      const dark = bright < 12;
+      el.innerHTML =
+        '<div class="row"><div class="k">Got image</div><div class="v">' + pill(true, Math.round(f.size/1024) + ' KB') + '</div></div>' +
+        '<div class="row"><div class="k">Dimensions</div><div class="v">' + img.width + ' × ' + img.height + '</div></div>' +
+        '<div class="row"><div class="k">Brightness</div><div class="v">' + (dark ? pill(false, bright + ' — BLACK') : pill(true, bright + ' — fine')) + '</div></div>' +
+        (dark ? '<div class="verdict" style="background:var(--badbg);color:var(--bad)">The camera returned an all-black image. That is an iOS camera problem, not a problem with this app.</div>'
+              : '<div class="verdict" style="background:var(--okbg);color:var(--ok)">File picker works correctly.</div>');
+    };
+    img.src = ev.target.result;
+  };
+  rd.readAsDataURL(f);
+}
+
+let stream = null;
+async function testCam() {
+  const el = document.getElementById('camResult');
+  const v = document.getElementById('vid');
+  if (!navigator.mediaDevices?.getUserMedia) {
+    R.liveCamera = 'API missing';
+    el.innerHTML = '<div class="verdict" style="background:var(--badbg);color:var(--bad)">getUserMedia is not available in this context.</div>';
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    v.srcObject = stream; v.style.display = 'block';
+    const track = stream.getVideoTracks()[0];
+    const st = track.getSettings ? track.getSettings() : {};
+    R.liveCamera = 'granted';
+    R.trackLabel = track.label || '(no label)';
+    R.trackState = track.readyState;
+    R.trackRes = (st.width || '?') + 'x' + (st.height || '?');
+
+    setTimeout(() => {
+      const cv = document.createElement('canvas');
+      cv.width = 40; cv.height = 40;
+      const cx = cv.getContext('2d');
+      try { cx.drawImage(v, 0, 0, 40, 40); } catch (e) {}
+      const d = cx.getImageData(0, 0, 40, 40).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i+1] + d[i+2]) / 3;
+      const bright = Math.round(sum / (d.length / 4));
+      R.liveBrightness = bright;
+      const dark = bright < 12;
+      el.innerHTML =
+        '<div class="row"><div class="k">Permission</div><div class="v">' + pill(true, 'granted') + '</div></div>' +
+        '<div class="row"><div class="k">Camera</div><div class="v">' + (track.label || '(unnamed)') + '</div></div>' +
+        '<div class="row"><div class="k">Resolution</div><div class="v">' + R.trackRes + '</div></div>' +
+        '<div class="row"><div class="k">Track state</div><div class="v">' + track.readyState + '</div></div>' +
+        '<div class="row"><div class="k">Frame brightness</div><div class="v">' + (dark ? pill(false, bright + ' — BLACK') : pill(true, bright + ' — fine')) + '</div></div>' +
+        (dark ? '<div class="verdict" style="background:var(--badbg);color:var(--bad)">Permission was granted but the frames are black. Usually another app is holding the camera, or iOS is restricting it in this mode.</div>'
+              : '<div class="verdict" style="background:var(--okbg);color:var(--ok)">Live camera works.</div>');
+    }, 1500);
+  } catch (err) {
+    R.liveCamera = 'FAILED: ' + (err.name || err);
+    R.liveCameraMsg = err.message || '';
+    el.innerHTML = '<div class="verdict" style="background:var(--badbg);color:var(--bad)"><strong>' + (err.name || 'Error') + '</strong><br>' + (err.message || '') + '</div>';
+  }
+}
+function stopCam() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  document.getElementById('vid').style.display = 'none';
+}
+
+function copyReport() {
+  const txt = JSON.stringify(R, null, 2);
+  const out = document.getElementById('out');
+  out.style.display = 'block';
+  out.textContent = txt;
+  navigator.clipboard?.writeText(txt).then(
+    () => { out.textContent = txt + '\n\n[copied to clipboard]'; },
+    () => {}
+  );
+}
+</script>
+</body>
+</html>
