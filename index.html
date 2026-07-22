@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <style>
 :root {
   --bg: #f5f3ef;
@@ -259,7 +259,7 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
           <span class="zone-emoji">📇</span>
           <div class="zone-title">Tap to photograph or upload</div>
           <div class="zone-sub">Works with photos, screenshots or files</div>
-          <input type="file" accept="image/*" capture="environment" onchange="handleImg(event)">
+          <input type="file" accept="image/*" onchange="handleImg(event)">
         </label>
         <img id="prevImg" class="preview-img" alt="Card preview">
         <div id="scanStatus"></div>
@@ -337,6 +337,11 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
         </div>
         <button class="btn btn-secondary" id="startQRBtn" onclick="startQR()" style="margin-top:10px">📷 Start camera</button>
         <button class="btn btn-link" id="stopQRBtn" onclick="stopQR()" style="display:none">Stop camera</button>
+        <label class="btn btn-secondary" style="margin-top:6px;cursor:pointer">
+          🖼 Scan a QR from a photo
+          <input type="file" accept="image/*" onchange="scanQRFile(event)" style="display:none">
+        </label>
+        <div id="qrDiag" style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.5"></div>
       </div>
 
       <div class="card">
@@ -898,17 +903,66 @@ function saveFromEdit() {
 // ─────────────────────────────────────────
 // QR
 // ─────────────────────────────────────────
+function qrDiag(msg) {
+  const el = document.getElementById('qrDiag');
+  if (el) el.innerHTML = msg;
+}
+
 function startQR() {
+  if (typeof Html5Qrcode === 'undefined') {
+    qrDiag('The QR library did not load. Check your connection and reload, or use <strong>Scan a QR from a photo</strong>.');
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    qrDiag('Live camera is not available here. Use <strong>Scan a QR from a photo</strong>, or open this page in Safari instead of the home-screen app.');
+    return;
+  }
+
   document.getElementById('startQRBtn').style.display = 'none';
   document.getElementById('stopQRBtn').style.display = 'flex';
   document.getElementById('qrResult').style.display = 'none';
+  qrDiag('');
+
   qrScanner = new Html5Qrcode('qr-reader');
   qrScanner.start(
     { facingMode: 'environment' },
     { fps: 10, qrbox: { width: 240, height: 240 } },
     decoded => { stopQR(); handleQR(decoded); },
     () => {}
-  ).catch(() => toast('Camera access denied'));
+  ).catch(err => {
+    document.getElementById('startQRBtn').style.display = 'flex';
+    document.getElementById('stopQRBtn').style.display = 'none';
+    qrScanner = null;
+    const name = (err && (err.name || err.toString())) || 'Unknown error';
+    let hint;
+    if (/NotAllowed|Permission/i.test(name)) {
+      hint = 'Camera permission was denied. On iPhone: Settings \u2192 Safari \u2192 Camera \u2192 Allow, then reload.';
+    } else if (/NotFound|Devices/i.test(name)) {
+      hint = 'No camera was found on this device.';
+    } else if (/NotReadable|Track/i.test(name)) {
+      hint = 'The camera is in use by another app. Close it and try again.';
+    } else {
+      hint = 'Live camera failed here (' + name + '). Use <strong>Scan a QR from a photo</strong> instead.';
+    }
+    qrDiag(hint);
+  });
+}
+
+async function scanQRFile(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (typeof Html5Qrcode === 'undefined') { qrDiag('QR library did not load \u2014 reload the page.'); return; }
+  qrDiag('Reading\u2026');
+  try {
+    const scanner = new Html5Qrcode('qr-reader');
+    const decoded = await scanner.scanFile(file, true);
+    await scanner.clear();
+    qrDiag('');
+    handleQR(decoded);
+  } catch {
+    qrDiag('No QR code found in that image. Try a closer, sharper photo of just the code.');
+  }
 }
 
 function stopQR() {
