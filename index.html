@@ -662,6 +662,43 @@ function go(id, btn) {
 // ─────────────────────────────────────────
 // Image scan
 // ─────────────────────────────────────────
+// Anthropic downsamples anything over 1568px on the long edge anyway, so resizing
+// here costs no quality and keeps us under the 5MB payload cap. Re-encoding through
+// canvas also normalises HEIC/PNG/WebP into real JPEG.
+const MAX_EDGE = 1568;
+
+function prepareImage(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error('Could not read that file'));
+    r.onload = ev => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('That file is not an image this phone can open'));
+      img.onload = () => {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (!w || !h) return reject(new Error('That image has no dimensions'));
+        const longest = Math.max(w, h);
+        if (longest > MAX_EDGE) {
+          const s = MAX_EDGE / longest;
+          w = Math.round(w * s); h = Math.round(h * s);
+        }
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const cx = cv.getContext('2d');
+        cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);
+        cx.drawImage(img, 0, 0, w, h);
+        let dataUrl;
+        try { dataUrl = cv.toDataURL('image/jpeg', 0.9); }
+        catch { return reject(new Error('Could not process that image')); }
+        const b64 = dataUrl.split(',')[1];
+        resolve({ dataUrl, b64, w, h, kb: Math.round(b64.length * 0.75 / 1024) });
+      };
+      img.src = ev.target.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
 function handleImg(e) {
   const diag = document.getElementById('imgDiag');
   const file = e.target.files[0];
@@ -672,18 +709,19 @@ function handleImg(e) {
   }
   if (diag) diag.textContent = '';
 
-  const r = new FileReader();
-  r.onerror = () => { if (diag) diag.textContent = 'Could not read that file. Try a different photo.'; };
-  r.onload = ev => {
-    imgB64 = ev.target.result.split(',')[1];
+  if (diag) diag.textContent = 'Preparing image\u2026';
+  prepareImage(file).then(out => {
+    imgB64 = out.b64;
     const img = document.getElementById('prevImg');
-    img.src = ev.target.result; img.style.display = 'block';
+    img.src = out.dataUrl; img.style.display = 'block';
     document.getElementById('scanBtn').style.display = 'flex';
     document.getElementById('resultBlock').style.display = 'none';
     document.getElementById('editBlock').style.display = 'none';
     document.getElementById('scanStatus').innerHTML = '';
-  };
-  r.readAsDataURL(file);
+    if (diag) diag.textContent = 'Ready \u00b7 ' + out.w + '\u00d7' + out.h + ' \u00b7 ' + out.kb + ' KB';
+  }).catch(err => {
+    if (diag) diag.textContent = err.message;
+  });
 }
 
 async function runScan() {
@@ -707,7 +745,13 @@ async function runScan() {
     document.getElementById('editBlock').style.display = 'none';
     getLocation();
   } catch(err) {
-    document.getElementById('scanStatus').innerHTML = '<span class="pill pill-err">✕ ' + err.message + '</span>';
+    const m = err.message || 'Scan failed';
+    let hint = '';
+    if (/limit/i.test(m)) hint = 'Try again tomorrow, or ask your admin to raise the cap.';
+    else if (/clearer|read that card/i.test(m)) hint = 'Fill the frame with the card, avoid glare, and hold steady.';
+    document.getElementById('scanStatus').innerHTML =
+      '<span class="pill pill-err">\u2715 ' + m + '</span>' +
+      (hint ? '<div style="font-size:12px;color:var(--text3);margin-top:6px;line-height:1.5">' + hint + '</div>' : '');
     console.error(err);
   }
   btn.disabled = false;
