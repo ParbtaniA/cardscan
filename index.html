@@ -172,27 +172,24 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
 <div id="setup-overlay">
   <div class="setup-logo">📇</div>
   <div class="setup-title">CardScan</div>
-  <div class="setup-sub">Enter your keys once — stored only on this device.</div>
 
-  <div class="setup-card">
-    <div class="setup-card-title">Anthropic API Key</div>
-    <div class="setup-field">
-      <label>API Key</label>
-      <input type="text" id="s_anth" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+  <div id="claimBox" style="display:none;width:100%;max-width:480px">
+    <div class="setup-sub" id="claimIntro">You've been invited.</div>
+    <div class="setup-card">
+      <div class="setup-card-title">Set up your account</div>
+      <div class="setup-field">
+        <label>Your name</label>
+        <input type="text" id="claimName" placeholder="e.g. Maria Lopez" autocomplete="name">
+      </div>
+      <div class="setup-note">This name is attached to every contact you collect.</div>
     </div>
-    <div class="setup-note">Get yours at <a href="https://platform.claude.com/settings/keys" target="_blank">platform.claude.com/settings/keys</a></div>
+    <button class="btn-setup" onclick="claimInvite()" id="claimBtn">Start scanning</button>
+    <div id="claimStatus" style="margin-top:10px;text-align:center"></div>
   </div>
 
-  <div class="setup-card">
-    <div class="setup-card-title">Airtable</div>
-    <div class="setup-field">
-      <label>API Token</label>
-      <input type="text" id="s_at" placeholder="patXXXX…" autocomplete="off" spellcheck="false" value="">
-    </div>
-    <div class="setup-note">Base ID: <code>appNWqtWKEQaVa97F</code> · Table: <code>tbl20LKbf0JODZE9h</code> (pre-filled)</div>
+  <div id="noInviteBox" style="display:none;width:100%;max-width:480px;text-align:center">
+    <div class="setup-sub">This app is invite-only.<br>Ask whoever runs it to send you a link.</div>
   </div>
-
-  <button class="btn-setup" onclick="finishSetup()">Save & open app</button>
 </div>
 
 <!-- ════════ APP ════════ -->
@@ -344,12 +341,25 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
     <button class="btn btn-primary" onclick="saveMyCard()" style="margin-top:4px">Save & regenerate QR</button>
 
     <hr class="rule" style="margin:18px 0">
-    <div class="card-label">API Keys</div>
-    <div class="fg"><label>Anthropic key</label><input type="text" id="cfg_anth" autocomplete="off" spellcheck="false"></div>
-    <div class="fg"><label>Airtable token</label><input type="text" id="cfg_at" autocomplete="off" spellcheck="false"></div>
-    <button class="btn btn-secondary" onclick="saveKeys()">Save keys</button>
-    <button class="btn btn-secondary" onclick="testAT()" style="margin-top:6px">Test Airtable connection</button>
-    <div id="atStatus"></div>
+    <div class="card-label">Invite</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">Generate a link for someone to join. It works once and expires in 48 hours.</p>
+    <button class="btn btn-primary" onclick="makeInvite()" style="margin-top:0">🔗 Create invite link</button>
+    <div id="inviteBox" style="display:none;margin-top:10px">
+      <div class="qr-raw" id="inviteUrl" style="max-height:none"></div>
+      <button class="btn btn-secondary" onclick="shareInvite()">Share</button>
+      <button class="btn btn-secondary" onclick="copyInvite()" style="margin-top:6px">Copy link</button>
+    </div>
+
+    <div id="teamPanel" style="display:none">
+      <hr class="rule" style="margin:18px 0">
+      <div class="card-label">Team</div>
+      <div id="teamList" style="font-size:14px"></div>
+    </div>
+
+    <hr class="rule" style="margin:18px 0">
+    <div class="card-label">Account</div>
+    <div id="whoami" style="font-size:13px;color:var(--text2);padding:4px 0"></div>
+    <button class="btn btn-secondary" onclick="signOut()">Sign out</button>
   </div>
 </div>
 
@@ -364,34 +374,126 @@ let parsed = null, imgB64 = null, qrParsed = null, qrScanner = null, contacts = 
 // ─────────────────────────────────────────
 // Boot
 // ─────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  const anth = ls('anth_key'), at = ls('at_key');
-  if (anth && at) {
-    document.getElementById('setup-overlay').style.display = 'none';
-    document.getElementById('appShell').style.display = 'flex';
-    loadMyCard();
-    genMyQR();
-  } else {
-    // Pre-fill Airtable token we already generated
+const API = "https://cardscan-api.ayaz-parbtani.workers.dev";
+let ME = null;
 
-  }
-});
-
-function finishSetup() {
-  const anth = document.getElementById('s_anth').value.trim();
-  const at   = document.getElementById('s_at').value.trim();
-  if (!anth) { toast('Paste your Anthropic API key first'); return; }
-  if (!at)   { toast('Paste your Airtable token first'); return; }
-  lss('anth_key', anth);
-  lss('at_key', at);
-  document.getElementById('setup-overlay').style.display = 'none';
-  document.getElementById('appShell').style.display = 'flex';
-  loadMyCard();
-  genMyQR();
+function authHeaders(extra) {
+  const t = ls('session');
+  return Object.assign({ 'Content-Type': 'application/json' }, t ? { 'Authorization': 'Bearer ' + t } : {}, extra || {});
 }
 
-// ─────────────────────────────────────────
-// Nav
+async function api(path, opts) {
+  const res = await fetch(API + path, Object.assign({ headers: authHeaders() }, opts || {}));
+  let body = {};
+  try { body = await res.json(); } catch {}
+  if (res.status === 401) { lss('session', ''); showLocked(); throw new Error('Session expired'); }
+  if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
+  return body;
+}
+
+function showApp() {
+  document.getElementById('setup-overlay').style.display = 'none';
+  document.getElementById('appShell').style.display = 'flex';
+  loadMyCard(); genMyQR();
+}
+function showClaim(invite) {
+  document.getElementById('setup-overlay').style.display = 'flex';
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('claimBox').style.display = 'block';
+  document.getElementById('noInviteBox').style.display = 'none';
+  window.__invite = invite;
+}
+function showLocked() {
+  document.getElementById('setup-overlay').style.display = 'flex';
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('claimBox').style.display = 'none';
+  document.getElementById('noInviteBox').style.display = 'block';
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const invite = new URLSearchParams(location.search).get('invite');
+  if (invite) { showClaim(invite); return; }
+
+  if (!ls('session')) { showLocked(); return; }
+  try {
+    const { user } = await api('/auth/me');
+    ME = user;
+    showApp();
+  } catch { showLocked(); }
+});
+
+async function claimInvite() {
+  const name = v('claimName');
+  const st = document.getElementById('claimStatus');
+  if (!name) { st.innerHTML = '<span class="pill pill-err">Enter your name</span>'; return; }
+  const btn = document.getElementById('claimBtn');
+  btn.disabled = true; btn.textContent = 'Setting up\u2026';
+  try {
+    const res = await fetch(API + '/auth/claim', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invite: window.__invite, name })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not join');
+    lss('session', data.token);
+    ME = data.user;
+    history.replaceState({}, '', location.pathname);
+    showApp();
+  } catch (e) {
+    st.innerHTML = '<span class="pill pill-err">' + e.message + '</span>';
+    btn.disabled = false; btn.textContent = 'Start scanning';
+  }
+}
+
+function signOut() {
+  if (!confirm('Sign out? You will need a new invite link to get back in.')) return;
+  lss('session', ''); lss('contacts', '[]');
+  location.reload();
+}
+
+async function makeInvite() {
+  try {
+    const { url } = await api('/auth/invite', { method: 'POST' });
+    window.__inviteUrl = url;
+    document.getElementById('inviteUrl').textContent = url;
+    document.getElementById('inviteBox').style.display = 'block';
+  } catch (e) { toast(e.message); }
+}
+function shareInvite() {
+  const url = window.__inviteUrl; if (!url) return;
+  if (navigator.share) navigator.share({ title: 'CardScan invite', text: 'Join CardScan', url });
+  else copyInvite();
+}
+function copyInvite() {
+  const url = window.__inviteUrl; if (!url) return;
+  navigator.clipboard.writeText(url).then(() => toast('Link copied'), () => toast('Copy failed'));
+}
+
+async function loadTeam() {
+  if (!ME?.admin) return;
+  document.getElementById('teamPanel').style.display = 'block';
+  try {
+    const { users } = await api('/admin/users');
+    document.getElementById('teamList').innerHTML = users.map(u => `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600">${u.name}${u.admin ? ' <span class="ci-tag">admin</span>' : ''}</div>
+          <div style="font-size:12px;color:var(--text3)">${u.invitedByName ? 'invited by ' + u.invitedByName : 'owner'}</div>
+        </div>
+        ${u.admin ? '' : `<button class="btn" style="width:auto;padding:6px 12px;font-size:13px;${u.active
+          ? 'background:var(--red-bg);color:var(--red)'
+          : 'background:var(--green-bg);color:var(--green)'}"
+          onclick="toggleUser('${u.uid}',${!u.active})">${u.active ? 'Revoke' : 'Restore'}</button>`}
+      </div>`).join('');
+  } catch (e) { document.getElementById('teamList').textContent = e.message; }
+}
+
+async function toggleUser(uid, active) {
+  if (active === false && !confirm('Revoke access? They lose the app immediately. Their contacts stay in Airtable.')) return;
+  try { await api('/admin/revoke', { method: 'POST', body: JSON.stringify({ uid, active }) }); loadTeam(); }
+  catch (e) { toast(e.message); }
+}
+
 // ─────────────────────────────────────────
 function go(id, btn) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -430,31 +532,18 @@ async function runScan() {
 {"name":"full name or null","title":"job title or null","company":"company name or null","email":["email1"] or [],"email2":"second email or null","phone":"digits and dashes only no country code or null","phone2":"second phone or null","website":"url or null","linkedin":"linkedin url or null","address":"address or null","other":"any extra info or null"}`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const { parsed: p } = await api('/api/scan', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ls('anth_key'),
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{
-        role: 'user', content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imgB64 } },
-          { type: 'text', text: prompt }
-        ]
-      }]})
+      body: JSON.stringify({ image: imgB64 })
     });
-    const data = await res.json();
-    const raw = data.content.map(b => b.text||'').join('');
-    parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    parsed = p;
     renderResult(parsed);
     document.getElementById('scanStatus').innerHTML = '<span class="pill pill-ok">✓ Extracted</span>';
     document.getElementById('resultBlock').style.display = 'block';
     document.getElementById('editBlock').style.display = 'none';
-    getLocation(); // fire after result is visible so location field shows
+    getLocation();
   } catch(err) {
-    document.getElementById('scanStatus').innerHTML = '<span class="pill pill-err">✕ Failed — try a clearer photo or check your API key</span>';
+    document.getElementById('scanStatus').innerHTML = '<span class="pill pill-err">✕ ' + err.message + '</span>';
     console.error(err);
   }
   btn.disabled = false;
@@ -750,109 +839,42 @@ async function saveContact() {
 }
 
 async function pushToAT(p, note, event, fu, qrRaw) {
-  const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
-  const tok = ls('at_key');
-  if (!tok) { toast('Add Airtable token in Settings'); return; }
   const emails = Array.isArray(p.email) ? p.email : (p.email ? [p.email] : []);
-
-  // Clean phone: keep only digits and dashes, strip country code prefix
-  const cleanPhone = (ph) => {
-    if (!ph) return '';
-    return ph.replace(/[^\d\-]/g, '').replace(/^1\-?/, '');
-  };
+  const cleanPhone = ph => ph ? ph.replace(/[^\d\-]/g, '').replace(/^1\-?/, '') : '';
 
   const fields = {
-    'Full Name': p.name||'',
-    'Job Title': p.title||'',
-    'Company': p.company||'',
-    'Email': emails[0]||'',
-    'Email 2': emails[1]||p.email2||'',
-    'Phone': cleanPhone(p.phone),
-    'Phone 2': cleanPhone(p.phone2||''),
-    'Website': p.website||'',
-    'LinkedIn': p.linkedin||'',
-    'Address': p.address||'',
-    'Note': note||'',
-    'Event': event||'',
-    'Follow Up': !!fu,
-    'Date Scanned': new Date().toISOString(),
+    'Full Name': p.name||'', 'Job Title': p.title||'', 'Company': p.company||'',
+    'Email': emails[0]||'', 'Email 2': emails[1]||p.email2||'',
+    'Phone': cleanPhone(p.phone), 'Phone 2': cleanPhone(p.phone2||''),
+    'Website': p.website||'', 'LinkedIn': p.linkedin||'', 'Address': p.address||'',
+    'Note': note||'', 'Event': event||'', 'Follow Up': !!fu,
     'Location': (document.getElementById('locationIn')?.value.trim()) || ls('lastLocation') || '',
   };
   if (qrRaw) fields['QR Data'] = qrRaw;
-
-  // Remove blank typed fields
-  ['Email','Email 2','Website','LinkedIn'].forEach(k => { if (!fields[k]) delete fields[k]; });
-  ['Phone','Phone 2'].forEach(k => { if (!fields[k]) delete fields[k]; });
+  ['Email','Email 2','Website','LinkedIn','Phone','Phone 2'].forEach(k => { if (!fields[k]) delete fields[k]; });
 
   try {
-    const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields })
-    });
-    if (!res.ok) throw new Error(await res.text());
-    // Cache locally
-    const local = JSON.parse(ls('contacts')||'[]');
-    local.unshift({ ...fields, _id: Date.now() });
-    lss('contacts', JSON.stringify(local.slice(0, 300)));
+    await api('/api/contacts', { method: 'POST', body: JSON.stringify({ fields }) });
     toast('✓ Contact saved');
-    // Reset UI
-    document.getElementById('resultBlock').style.display = 'none';
-    document.getElementById('editBlock').style.display = 'none';
-    document.getElementById('prevImg').style.display = 'none';
-    document.getElementById('scanBtn').style.display = 'none';
-    document.getElementById('scanStatus').innerHTML = '';
-    document.getElementById('noteIn').value = '';
-    document.getElementById('eventIn').value = '';
-    document.getElementById('fuCheck').checked = false;
+    resetScan();
     document.getElementById('qrResult').style.display = 'none';
-    parsed = null; qrParsed = null;
-  } catch(e) {
-    toast('Save failed — check Settings'); console.error(e);
-  }
-}
-
-async function testAT() {
-  const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
-  const tok = v('cfg_at') || ls('at_key');
-  if (!tok) { document.getElementById('atStatus').innerHTML = '<span class="pill pill-err">No token</span>'; return; }
-  try {
-    const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}?maxRecords=1`, {
-      headers: { 'Authorization': `Bearer ${tok}` }
-    });
-    document.getElementById('atStatus').innerHTML = res.ok
-      ? '<span class="pill pill-ok">✓ Connected</span>'
-      : '<span class="pill pill-err">✕ Check token</span>';
-  } catch { document.getElementById('atStatus').innerHTML = '<span class="pill pill-err">✕ Failed</span>'; }
+    qrParsed = null;
+  } catch(e) { toast(e.message); console.error(e); }
 }
 
 // ─────────────────────────────────────────
 // Contacts list
 // ─────────────────────────────────────────
 async function loadContacts() {
-  const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
-  const tok = ls('at_key');
-
-  // Show local cache immediately — never a blank screen
   const cached = JSON.parse(ls('contacts')||'[]');
   if (cached.length) { contacts = cached; renderList(); }
-
-  if (tok) {
-    try {
-      const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}?sort[0][field]=Date%20Scanned&sort[0][direction]=desc&maxRecords=150`, {
-        headers: { 'Authorization': `Bearer ${tok}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        contacts = data.records.map(r => ({ _id: r.id, ...r.fields }));
-        lss('contacts', JSON.stringify(contacts));
-        renderList();
-      }
-      // If read fails (missing scope) silently stay on cached data
-    } catch {}
-  }
-
-  if (!contacts.length) renderList(); // show empty state if truly nothing
+  try {
+    const { records, admin } = await api('/api/contacts');
+    contacts = records;
+    if (ME) ME.admin = admin;
+    lss('contacts', JSON.stringify(contacts));
+  } catch(e) { console.error(e); }
+  renderList();
 }
 
 function renderList() {
@@ -874,6 +896,7 @@ function renderList() {
         <div class="ci-name">${c['Full Name']||'Unknown'}</div>
         <div class="ci-sub">${[c['Job Title'],c['Company']].filter(Boolean).join(' · ')||''}</div>
         ${c['Event']?`<span class="ci-tag">${c['Event']}</span>`:''}
+        ${(ME&&ME.admin&&c['Collected By'])?`<span class="ci-tag" style="background:var(--surface2);color:var(--text2)">${c['Collected By']}</span>`:''}
       </div>
       ${c['Follow Up']?'<div class="ci-dot"></div>':''}
     </div>
@@ -915,26 +938,13 @@ function openDetail(c) {
 
 async function deleteContact(id) {
   if (!confirm('Delete this contact? This cannot be undone.')) return;
-  const BASE = 'appNWqtWKEQaVa97F', TABLE = 'tbl20LKbf0JODZE9h';
-  const tok = ls('at_key');
-  // Delete from Airtable if it's an Airtable record ID (starts with rec)
-  if (tok && id && id.startsWith('rec')) {
-    try {
-      const res = await fetch(`https://api.airtable.com/v0/${BASE}/${TABLE}/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${tok}` }
-      });
-      if (!res.ok) throw new Error(await res.text());
-    } catch(e) {
-      toast('Failed to delete from Airtable'); console.error(e); return;
-    }
-  }
-  // Remove from local cache
-  contacts = contacts.filter(c => c._id !== id);
-  lss('contacts', JSON.stringify(contacts));
-  toast('Contact deleted');
-  closeDetail();
-  renderList();
+  try {
+    await api('/api/contacts/' + id, { method: 'DELETE' });
+    contacts = contacts.filter(x => x._id !== id);
+    lss('contacts', JSON.stringify(contacts));
+    toast('Contact deleted');
+    closeDetail(); renderList();
+  } catch(e) { toast(e.message); }
 }
 
 function closeDetail() {
@@ -947,8 +957,10 @@ function closeDetail() {
 // ─────────────────────────────────────────
 function openSettings() {
   loadMyCard();
-  document.getElementById('cfg_anth').value = ls('anth_key')||'';
-  document.getElementById('cfg_at').value   = ls('at_key')||'';
+  document.getElementById('whoami').textContent =
+    ME ? `Signed in as ${ME.name}${ME.admin ? ' (owner)' : ''}` : '';
+  document.getElementById('inviteBox').style.display = 'none';
+  loadTeam();
   document.getElementById('settingsModal').style.display = 'flex';
 }
 function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
@@ -979,11 +991,7 @@ function loadMyCard() {
   if (!ls('myCard')) lss('myCard', JSON.stringify(defaults));
 }
 
-function saveKeys() {
-  lss('anth_key', v('cfg_anth'));
-  lss('at_key', v('cfg_at'));
-  toast('Keys saved');
-}
+
 
 // ─────────────────────────────────────────
 // Helpers
