@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CardScan">
 <title>CardScan</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
@@ -153,6 +155,10 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
 #myqr-wrap canvas, #myqr-wrap img { border-radius: 8px; }
 
 /* ── Toast ── */
+#installNudge { display:none; background: var(--accent-bg); border: 0.5px solid var(--accent-border); border-radius: var(--rlg); padding: 14px 16px; margin-bottom: 12px; }
+#installNudge .t { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+#installNudge .d { font-size: 13px; color: var(--text2); line-height: 1.5; }
+#installNudge button { background:none; border:none; color:var(--text3); font-size:12px; text-decoration:underline; cursor:pointer; padding:6px 0 0; }
 .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 22px; font-size: 14px; font-weight: 600; z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.2s; white-space: nowrap; letter-spacing: -0.1px; }
 .toast.show { opacity: 1; }
 
@@ -209,6 +215,11 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
 
     <!-- ── SCAN ── -->
     <div id="scan" class="section active">
+      <div id="installNudge">
+        <div class="t">📲 Add to your home screen</div>
+        <div class="d" id="installHow"></div>
+        <button onclick="dismissNudge()">Don't show again</button>
+      </div>
       <div class="card">
         <div class="card-label">Business card image</div>
         <label class="upload-zone">
@@ -394,7 +405,26 @@ async function api(path, opts) {
 function showApp() {
   document.getElementById('setup-overlay').style.display = 'none';
   document.getElementById('appShell').style.display = 'flex';
-  loadMyCard(); genMyQR();
+  loadMyCard(); genMyQR(); maybeNudgeInstall();
+}
+
+// Installed apps keep their storage; a plain Safari tab can have it evicted after
+// ~7 days of no use. So this nudge is about durability, not just convenience.
+function isInstalled() {
+  return window.navigator.standalone === true ||
+         window.matchMedia('(display-mode: standalone)').matches;
+}
+function maybeNudgeInstall() {
+  if (isInstalled() || ls('nudgeOff') === '1') return;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  document.getElementById('installHow').innerHTML = ios
+    ? 'Tap the Share button, then <strong>Add to Home Screen</strong>. This keeps you signed in \u2014 in a normal browser tab your session can expire after about a week of not using it.'
+    : 'Open your browser menu and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>. This keeps you signed in between events.';
+  document.getElementById('installNudge').style.display = 'block';
+}
+function dismissNudge() {
+  lss('nudgeOff','1');
+  document.getElementById('installNudge').style.display = 'none';
 }
 function showClaim(invite) {
   document.getElementById('setup-overlay').style.display = 'flex';
@@ -480,12 +510,26 @@ async function loadTeam() {
           <div style="font-weight:600">${u.name}${u.admin ? ' <span class="ci-tag">admin</span>' : ''}</div>
           <div style="font-size:12px;color:var(--text3)">${u.invitedByName ? 'invited by ' + u.invitedByName : 'owner'}</div>
         </div>
-        ${u.admin ? '' : `<button class="btn" style="width:auto;padding:6px 12px;font-size:13px;${u.active
-          ? 'background:var(--red-bg);color:var(--red)'
-          : 'background:var(--green-bg);color:var(--green)'}"
-          onclick="toggleUser('${u.uid}',${!u.active})">${u.active ? 'Revoke' : 'Restore'}</button>`}
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn" style="width:auto;padding:6px 10px;font-size:13px;background:var(--surface2);color:var(--text)"
+            onclick="reinvite('${u.uid}','${u.name.replace(/'/g,"\\'")}')" title="Send a new link that keeps their contacts">Re-issue</button>
+          ${u.admin ? '' : `<button class="btn" style="width:auto;padding:6px 10px;font-size:13px;${u.active
+            ? 'background:var(--red-bg);color:var(--red)'
+            : 'background:var(--green-bg);color:var(--green)'}"
+            onclick="toggleUser('${u.uid}',${!u.active})">${u.active ? 'Revoke' : 'Restore'}</button>`}
+        </div>
       </div>`).join('');
   } catch (e) { document.getElementById('teamList').textContent = e.message; }
+}
+
+async function reinvite(uid, name) {
+  try {
+    const { url } = await api('/admin/reinvite', { method: 'POST', body: JSON.stringify({ uid }) });
+    window.__inviteUrl = url;
+    document.getElementById('inviteUrl').textContent = url;
+    document.getElementById('inviteBox').style.display = 'block';
+    toast('New link for ' + name + ' \u2014 keeps their contacts');
+  } catch (e) { toast(e.message); }
 }
 
 async function toggleUser(uid, active) {
