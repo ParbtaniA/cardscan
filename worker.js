@@ -295,7 +295,16 @@ export default {
         const { image } = await request.json();
         if (!image) return fail('No image');
 
-        const prompt = `Extract structured contact data from this business card image. Return ONLY valid JSON, nothing else:
+        const prompt = `You are reading a photograph of a business card. Extract every contact detail you can see.
+
+Rules:
+- Return ONLY a JSON object. No prose, no markdown fences, no explanation.
+- Use null for any field that is genuinely not present on the card.
+- Read text at any orientation, including rotated or vertical layouts.
+- If the card is double-sided or shows two logos, include everything you can see.
+- Never invent a value. If it is unreadable, use null.
+
+Shape:
 {"name":"full name or null","title":"job title or null","company":"company name or null","email":["email1"] or [],"email2":"second email or null","phone":"digits and dashes only no country code or null","phone2":"second phone or null","website":"url or null","linkedin":"linkedin url or null","address":"address or null","other":"any extra info or null"}`;
 
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -318,14 +327,44 @@ export default {
           }),
         });
         const data = await aiRes.json();
-        if (!aiRes.ok) return fail('Scan failed', 502);
+        if (!aiRes.ok) {
+          const detail = data?.error?.message || '';
+          if (/image|media|size|dimension/i.test(detail)) {
+            return fail('That photo could not be processed — try retaking it', 422);
+          }
+          if (aiRes.status === 429) return fail('Service is busy, try again in a moment', 429);
+          console.log('anthropic error', aiRes.status, detail);
+          return fail('Scan service error', 502);
+        }
 
         const text = (data.content || []).map(b => b.text || '').join('');
-        try {
-          return json({ parsed: JSON.parse(text.replace(/```json|```/g, '').trim()) });
-        } catch {
+
+        // The model occasionally wraps JSON in prose or fences. Take the outermost
+        // object rather than assuming the whole reply is clean JSON.
+        function extractJson(s) {
+          const stripped = s.replace(/```json/gi, '').replace(/```/g, '').trim();
+          try { return JSON.parse(stripped); } catch {}
+          const a = stripped.indexOf('{'), b = stripped.lastIndexOf('}');
+          if (a !== -1 && b > a) {
+            try { return JSON.parse(stripped.slice(a, b + 1)); } catch {}
+          }
+          return null;
+        }
+
+        const parsed = extractJson(text);
+        if (!parsed) {
+          console.log('unparseable model reply:', text.slice(0, 300));
           return fail('Could not read that card — try a clearer photo', 422);
         }
+
+        // A card with nothing legible on it is a failure worth reporting as such
+        const hasAnything = ['name','company','email','phone','title','website']
+          .some(k => parsed[k] && (Array.isArray(parsed[k]) ? parsed[k].length : String(parsed[k]).trim()));
+        if (!hasAnything) {
+          return fail('No contact details were readable on that card', 422);
+        }
+
+        return json({ parsed });
       }
 
       // ── List contacts: yours only, unless you're the admin
