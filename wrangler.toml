@@ -1,0 +1,18 @@
+name = "cardscan-api"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+APP_URL = "https://contacts.venzaura.com"
+
+# Create with:  npx wrangler kv namespace create KV
+# then paste the returned id below
+[[kv_namespaces]]
+binding = "KV"
+id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+
+# Secrets are NOT stored here. Set them with:
+#   npx wrangler secret put AIRTABLE_TOKEN
+#   npx wrangler secret put ANTHROPIC_KEY
+#   npx wrangler secret put JWT_SECRET
+#   npx wrangler secret put BOOTSTRAP_SECRET
