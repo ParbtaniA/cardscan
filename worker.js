@@ -124,19 +124,17 @@ export default {
         if (secret !== env.BOOTSTRAP_SECRET) return fail('Bad secret', 403);
         if (await env.KV.get('root_created')) return fail('Already bootstrapped', 409);
 
-        const user = {
-          uid: randomId('usr_'),
-          name: (name || 'Owner').trim(),
-          admin: true,
-          active: true,
-          invitedBy: null,
-          invitedByName: null,
+        // Mint a single-use, admin-granting invite. Same claim flow as everyone else,
+        // so the session is created on the owner's own device and the link burns on use.
+        const inviteTok = randomId('inv_');
+        await env.KV.put(`invite:${inviteTok}`, JSON.stringify({
+          createdBy: null,
+          createdByName: null,
+          grantsAdmin: true,
           createdAt: new Date().toISOString(),
-        };
-        await saveUser(env, user);
-        await env.KV.put('root_created', user.uid);
-        const token = await signToken({ uid: user.uid }, env.JWT_SECRET);
-        return json({ token, user });
+        }), { expirationTtl: INVITE_TTL_MS / 1000 });
+
+        return json({ url: `${env.APP_URL}?invite=${inviteTok}` });
       }
 
       // ── Claim an invite: burns the token, creates the user, returns a session
@@ -159,14 +157,15 @@ export default {
         const user = {
           uid: randomId('usr_'),
           name: name.trim(),
-          admin: false,
+          admin: !!inv.grantsAdmin,
           active: true,
           invitedBy: inv.createdBy,
           invitedByName: inv.createdByName,
           createdAt: new Date().toISOString(),
         };
         await saveUser(env, user);
-        await env.KV.put(`child:${inv.createdBy}:${user.uid}`, '1');
+        if (inv.grantsAdmin) await env.KV.put('root_created', user.uid);
+        if (inv.createdBy) await env.KV.put(`child:${inv.createdBy}:${user.uid}`, '1');
 
         const token = await signToken({ uid: user.uid }, env.JWT_SECRET);
         return json({ token, user });
