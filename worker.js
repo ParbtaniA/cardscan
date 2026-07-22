@@ -50,6 +50,41 @@ async function verifyToken(token, secret) {
   } catch { return null; }
 }
 
+// Recovery codes: 16 chars from a 32-symbol alphabet = 80 bits of entropy.
+// Ambiguous glyphs (0/O, 1/I/L) are excluded so they can be read off a screen.
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function genRecoveryCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let out = '';
+  for (let i = 0; i < 16; i++) {
+    if (i > 0 && i % 4 === 0) out += '-';
+    out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  }
+  return out;
+}
+
+function normalizeCode(s) {
+  return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// The code is already high-entropy, so a fast hash is appropriate here —
+// there is no low-entropy guess space for an attacker to grind through.
+async function hashCode(code) {
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode(normalizeCode(code)));
+  return b64url(digest);
+}
+
+async function issueRecoveryCode(env, uid) {
+  const prev = await env.KV.get(`user_reckey:${uid}`);
+  if (prev) await env.KV.delete(`recovery:${prev}`);   // old code stops working
+  const code = genRecoveryCode();
+  const h = await hashCode(code);
+  await env.KV.put(`recovery:${h}`, uid);
+  await env.KV.put(`user_reckey:${uid}`, h);
+  return code;
+}
+
 function randomId(prefix) {
   const b = crypto.getRandomValues(new Uint8Array(16));
   return prefix + b64url(b).slice(0, 22);
@@ -178,12 +213,52 @@ export default {
         }
         await saveUser(env, user);
 
+        // Fresh code on every claim, including re-issues — the old one is invalidated
+        const recoveryCode = await issueRecoveryCode(env, user.uid);
+
         const token = await signToken({ uid: user.uid }, env.JWT_SECRET);
+        return json({ token, user, recoveryCode });
+      }
+
+      // ── Recover a lost session with a recovery code
+      if (path === '/auth/recover' && request.method === 'POST') {
+        const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const failKey = `recfail:${ip}`;
+        const fails = parseInt(await env.KV.get(failKey) || '0', 10);
+        if (fails >= 10) return fail('Too many attempts. Try again in an hour.', 429);
+
+        const { code } = await request.json();
+        const norm = normalizeCode(code);
+        if (norm.length !== 16) {
+          await env.KV.put(failKey, String(fails + 1), { expirationTtl: 3600 });
+          return fail('That code does not look right', 400);
+        }
+
+        const uid = await env.KV.get(`recovery:${await hashCode(norm)}`);
+        if (!uid) {
+          await env.KV.put(failKey, String(fails + 1), { expirationTtl: 3600 });
+          return fail('Code not recognised', 403);
+        }
+
+        const raw = await env.KV.get(`user:${uid}`);
+        if (!raw) return fail('That account no longer exists', 404);
+        const user = JSON.parse(raw);
+        if (!user.active) return fail('This account has been deactivated', 403);
+
+        await env.KV.delete(failKey);
+        const token = await signToken({ uid }, env.JWT_SECRET);
         return json({ token, user });
       }
 
       // ── Everything below needs a session
       const me = await currentUser(request, env);
+
+      // ── Mint a replacement recovery code (invalidates the previous one)
+      if (path === '/auth/recovery' && request.method === 'POST') {
+        if (!me) return fail('Not signed in', 401);
+        const recoveryCode = await issueRecoveryCode(env, me.uid);
+        return json({ recoveryCode });
+      }
 
       if (path === '/auth/me' && request.method === 'GET') {
         if (!me) return fail('Not signed in', 401);
