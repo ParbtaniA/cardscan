@@ -9,7 +9,7 @@ APP_URL = "https://contacts.venzaura.com"
 # then paste the returned id below
 [[kv_namespaces]]
 binding = "KV"
-id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+id = "8c7ba4365bb14d97a3d0eb5ccea50243"
 
 # Secrets are NOT stored here. Set them with:
 #   npx wrangler secret put AIRTABLE_TOKEN
