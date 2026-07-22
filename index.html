@@ -159,6 +159,10 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
 #installNudge .t { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
 #installNudge .d { font-size: 13px; color: var(--text2); line-height: 1.5; }
 #installNudge button { background:none; border:none; color:var(--text3); font-size:12px; text-decoration:underline; cursor:pointer; padding:6px 0 0; }
+.code-display { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 21px; font-weight: 600;
+  letter-spacing: 1.5px; text-align: center; padding: 16px 12px; background: var(--surface2);
+  border: 1px dashed var(--border2); border-radius: var(--r); margin: 12px 0; user-select: all; word-break: break-all; }
+#codeInput { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; letter-spacing: 1px; text-align: center; text-transform: uppercase; }
 .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 22px; font-size: 14px; font-weight: 600; z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.2s; white-space: nowrap; letter-spacing: -0.1px; }
 .toast.show { opacity: 1; }
 
@@ -195,6 +199,35 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
 
   <div id="noInviteBox" style="display:none;width:100%;max-width:480px;text-align:center">
     <div class="setup-sub">This app is invite-only.<br>Ask whoever runs it to send you a link.</div>
+    <button class="btn btn-secondary" onclick="showRecover()" style="margin-top:14px">I have a recovery code</button>
+  </div>
+
+  <div id="recoverBox" style="display:none;width:100%;max-width:480px">
+    <div class="setup-sub">Enter the recovery code you saved when you joined.</div>
+    <div class="setup-card">
+      <div class="setup-card-title">Recovery code</div>
+      <div class="setup-field">
+        <input type="text" id="codeInput" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="one-time-code" spellcheck="false">
+      </div>
+    </div>
+    <button class="btn-setup" onclick="doRecover()" id="recoverBtn">Restore my access</button>
+    <div id="recoverStatus" style="margin-top:10px;text-align:center"></div>
+    <button class="btn btn-link" onclick="showLocked()" style="width:100%;margin-top:8px">Back</button>
+  </div>
+
+  <div id="codeBox" style="display:none;width:100%;max-width:480px">
+    <div class="setup-sub"><strong>Save this before continuing.</strong><br>It is the only way back in if you lose access to this device.</div>
+    <div class="setup-card">
+      <div class="setup-card-title">Your recovery code</div>
+      <div class="code-display" id="newCode"></div>
+      <button class="btn btn-secondary" onclick="copyCode()" style="margin-top:0">Copy code</button>
+      <div class="setup-note">Put it in your password manager or notes app. We cannot show it to you again \u2014 but your admin can always issue you a new link.</div>
+    </div>
+    <label style="display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text2);cursor:pointer;padding:8px 2px">
+      <input type="checkbox" id="codeSaved" onchange="document.getElementById('codeDone').disabled=!this.checked" style="width:auto;accent-color:var(--accent)">
+      I have saved my recovery code
+    </label>
+    <button class="btn-setup" id="codeDone" onclick="finishCodeStep()" disabled style="opacity:.45">Continue</button>
   </div>
 </div>
 
@@ -368,6 +401,15 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
     </div>
 
     <hr class="rule" style="margin:18px 0">
+    <div class="card-label">Recovery code</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">Generating a new code immediately invalidates your old one.</p>
+    <button class="btn btn-secondary" onclick="regenCode()" style="margin-top:0">Generate a new code</button>
+    <div id="regenBox" style="display:none">
+      <div class="code-display" id="regenCodeText"></div>
+      <button class="btn btn-secondary" onclick="copyRegen()" style="margin-top:0">Copy</button>
+    </div>
+
+    <hr class="rule" style="margin:18px 0">
     <div class="card-label">Account</div>
     <div id="whoami" style="font-size:13px;color:var(--text2);padding:4px 0"></div>
     <button class="btn btn-secondary" onclick="signOut()">Sign out</button>
@@ -429,15 +471,74 @@ function dismissNudge() {
 function showClaim(invite) {
   document.getElementById('setup-overlay').style.display = 'flex';
   document.getElementById('appShell').style.display = 'none';
+  hideAllSetup();
   document.getElementById('claimBox').style.display = 'block';
-  document.getElementById('noInviteBox').style.display = 'none';
   window.__invite = invite;
+}
+function hideAllSetup() {
+  ['claimBox','noInviteBox','recoverBox','codeBox'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
 }
 function showLocked() {
   document.getElementById('setup-overlay').style.display = 'flex';
   document.getElementById('appShell').style.display = 'none';
-  document.getElementById('claimBox').style.display = 'none';
+  hideAllSetup();
   document.getElementById('noInviteBox').style.display = 'block';
+}
+function showRecover() {
+  hideAllSetup();
+  document.getElementById('recoverBox').style.display = 'block';
+  document.getElementById('codeInput').focus();
+}
+function showCode(code) {
+  hideAllSetup();
+  document.getElementById('newCode').textContent = code;
+  window.__code = code;
+  document.getElementById('codeSaved').checked = false;
+  const done = document.getElementById('codeDone');
+  done.disabled = true; done.style.opacity = '.45';
+  document.getElementById('codeBox').style.display = 'block';
+}
+function copyCode() {
+  navigator.clipboard.writeText(window.__code || '').then(() => toast('Code copied'), () => toast('Copy failed'));
+}
+function finishCodeStep() { showApp(); }
+
+async function doRecover() {
+  const st = document.getElementById('recoverStatus');
+  const btn = document.getElementById('recoverBtn');
+  const code = v('codeInput');
+  if (!code) { st.innerHTML = '<span class="pill pill-err">Enter your code</span>'; return; }
+  btn.disabled = true; btn.textContent = 'Checking\u2026';
+  try {
+    const res = await fetch(API + '/auth/recover', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not restore');
+    lss('session', data.token);
+    ME = data.user;
+    showApp();
+    toast('Welcome back, ' + data.user.name);
+  } catch (e) {
+    st.innerHTML = '<span class="pill pill-err">' + e.message + '</span>';
+    btn.disabled = false; btn.textContent = 'Restore my access';
+  }
+}
+
+async function regenCode() {
+  if (!confirm('Generate a new recovery code? Your current one will stop working.')) return;
+  try {
+    const { recoveryCode } = await api('/auth/recovery', { method: 'POST' });
+    window.__regen = recoveryCode;
+    document.getElementById('regenCodeText').textContent = recoveryCode;
+    document.getElementById('regenBox').style.display = 'block';
+  } catch (e) { toast(e.message); }
+}
+function copyRegen() {
+  navigator.clipboard.writeText(window.__regen || '').then(() => toast('Code copied'), () => toast('Copy failed'));
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -468,7 +569,7 @@ async function claimInvite() {
     lss('session', data.token);
     ME = data.user;
     history.replaceState({}, '', location.pathname);
-    showApp();
+    if (data.recoveryCode) showCode(data.recoveryCode); else showApp();
   } catch (e) {
     st.innerHTML = '<span class="pill pill-err">' + e.message + '</span>';
     btn.disabled = false; btn.textContent = 'Start scanning';
@@ -1004,6 +1105,7 @@ function openSettings() {
   document.getElementById('whoami').textContent =
     ME ? `Signed in as ${ME.name}${ME.admin ? ' (owner)' : ''}` : '';
   document.getElementById('inviteBox').style.display = 'none';
+  document.getElementById('regenBox').style.display = 'none';
   loadTeam();
   document.getElementById('settingsModal').style.display = 'flex';
 }
