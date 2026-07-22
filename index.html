@@ -6,6 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CardScan">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>CardScan</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -310,7 +313,10 @@ textarea { resize: none; min-height: 76px; line-height: 1.5; }
       <div id="editBlock" style="display:none">
         <div class="card">
           <div class="card-label">Edit before saving</div>
-          <div class="fg"><label>Full name</label><input type="text" id="e_name"></div>
+          <div id="nameWarn" style="display:none;background:var(--red-bg);color:var(--red);font-size:13px;font-weight:600;padding:10px 12px;border-radius:var(--r);margin-bottom:10px">
+            A name is required before this contact can be saved.
+          </div>
+          <div class="fg"><label>Full name <span style="color:var(--red)">*</span></label><input type="text" id="e_name" oninput="clearNameWarn()"></div>
           <div class="fields2">
             <div class="fg"><label>Title</label><input type="text" id="e_title"></div>
             <div class="fg"><label>Company</label><input type="text" id="e_company"></div>
@@ -438,6 +444,35 @@ let parsed = null, imgB64 = null, qrParsed = null, qrScanner = null, contacts = 
 // Boot
 // ─────────────────────────────────────────
 const API = "https://cardscan-api.ayaz-parbtani.workers.dev";
+const BUILD = "20260722-165155";
+
+// iOS caches HTML aggressively and ignores no-cache meta tags, so we compare a
+// build stamp against the server and force a genuinely fresh fetch when it moves.
+async function checkForUpdate() {
+  try {
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    const { build } = await res.json();
+    if (!build || build === BUILD) return;
+
+    // Only reload once per new build, otherwise a stubborn cache loops forever
+    if (sessionStorage.getItem('reloadedFor') === build) return;
+    sessionStorage.setItem('reloadedFor', build);
+
+    const u = new URL(location.href);
+    u.searchParams.set('v', build);   // query change defeats the cache
+    location.replace(u.toString());
+  } catch {}
+}
+
+// Strip the cache-busting param once we are running, without losing ?invite=
+function tidyUrl() {
+  const u = new URL(location.href);
+  if (u.searchParams.has('v')) {
+    u.searchParams.delete('v');
+    history.replaceState({}, '', u.pathname + (u.search || '') + u.hash);
+  }
+}
 let ME = null;
 
 function authHeaders(extra) {
@@ -551,7 +586,14 @@ function copyRegen() {
   navigator.clipboard.writeText(window.__regen || '').then(() => toast('Code copied'), () => toast('Copy failed'));
 }
 
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkForUpdate();
+});
+window.addEventListener('pageshow', e => { if (e.persisted) checkForUpdate(); });
+
 window.addEventListener('DOMContentLoaded', async () => {
+  tidyUrl();
+  checkForUpdate();
   const invite = new URLSearchParams(location.search).get('invite');
   if (invite) { showClaim(invite); return; }
 
@@ -890,6 +932,14 @@ function renderResult(p) {
   if (p.address) h += field('📍','Address',p.address);
   if (p.other)   h += field('ℹ','Other',p.other);
   document.getElementById('rFields').innerHTML = h;
+
+  const missingName = !p.name || !String(p.name).trim();
+  const nm = document.getElementById('rName');
+  if (nm && missingName) {
+    nm.innerHTML = '<span style="color:var(--red)">No name found</span>';
+    const sub = document.getElementById('rSub');
+    if (sub) sub.innerHTML = '<span style="color:var(--red);font-size:12px">Tap \u201cEdit fields first\u201d to add one</span>';
+  }
 }
 
 function linkFor(lbl, val) {
@@ -925,6 +975,15 @@ function field(ico, lbl, val) {
   return `<div class="${cls}"><span class="fi">${ico}</span><div><div class="fl">${lbl}</div><div class="fv">${inner}</div></div></div>`;
 }
 
+function clearNameWarn() {
+  const el = document.getElementById('e_name');
+  const w = document.getElementById('nameWarn');
+  if (el && el.value.trim()) {
+    el.style.borderColor = '';
+    if (w) w.style.display = 'none';
+  }
+}
+
 function showEdit() {
   if (!parsed) return;
   const emails = Array.isArray(parsed.email) ? parsed.email : (parsed.email ? [parsed.email] : []);
@@ -948,6 +1007,14 @@ function cancelEdit() {
 }
 
 function saveFromEdit() {
+  if (!v('e_name')) {
+    const el = document.getElementById('e_name');
+    const w = document.getElementById('nameWarn');
+    if (w) w.style.display = 'block';
+    if (el) { el.style.borderColor = 'var(--red)'; el.focus(); }
+    toast('A name is required');
+    return;
+  }
   // carry location forward when editing
   parsed = {
     name: v('e_name'), title: v('e_title'), company: v('e_company'),
@@ -1096,6 +1163,22 @@ async function saveContact() {
 }
 
 async function pushToAT(p, note, event, fu, qrRaw) {
+  // A contact with no name is unusable for follow-up or de-duplication later,
+  // so this is a hard stop rather than a warning.
+  if (!p.name || !String(p.name).trim()) {
+    toast('Add a name before saving');
+    showEdit();
+    const el = document.getElementById('e_name');
+    if (el) {
+      el.style.borderColor = 'var(--red)';
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setTimeout(() => el.focus(), 300);
+    }
+    const w = document.getElementById('nameWarn');
+    if (w) w.style.display = 'block';
+    return;
+  }
+
   const emails = Array.isArray(p.email) ? p.email : (p.email ? [p.email] : []);
   const cleanPhone = ph => ph ? ph.replace(/[^\d\-]/g, '').replace(/^1\-?/, '') : '';
 
