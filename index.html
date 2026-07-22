@@ -111,7 +111,11 @@ body { height: 100%; background: var(--bg); font-family: -apple-system, 'SF Pro 
 .field-row { display: flex; align-items: flex-start; gap: 10px; padding: 5px 0; }
 .fi { font-size: 16px; width: 22px; flex-shrink: 0; padding-top: 1px; }
 .fl { font-size: 11px; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
-.fv { font-size: 14px; color: var(--text); margin-top: 1px; }
+.fv { font-size: 14px; color: var(--text); margin-top: 1px; word-break: break-word; }
+.fv a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-border); padding-bottom: 1px; }
+.fv a:active { opacity: 0.6; }
+.field-row.tappable { cursor: pointer; }
+.field-row.tappable:active { background: var(--surface2); border-radius: 6px; }
 
 /* ── Form fields ── */
 .fg { margin-bottom: 10px; }
@@ -591,8 +595,37 @@ function renderResult(p) {
   document.getElementById('rFields').innerHTML = h;
 }
 
+function linkFor(lbl, val) {
+  if (!val) return null;
+  const v = String(val).trim();
+  const l = lbl.toLowerCase();
+
+  if (l.startsWith('email')) return 'mailto:' + v;
+
+  if (l.startsWith('phone')) {
+    // tel: needs digits and an optional leading +, nothing else
+    const digits = v.replace(/[^\d+]/g, '');
+    return digits ? 'tel:' + digits : null;
+  }
+
+  if (l === 'website' || l === 'linkedin') {
+    return /^https?:\/\//i.test(v) ? v : 'https://' + v.replace(/^\/+/, '');
+  }
+
+  if (l === 'address' || l === 'scanned at') {
+    return 'https://maps.google.com/?q=' + encodeURIComponent(v);
+  }
+
+  return null;
+}
+
 function field(ico, lbl, val) {
-  return `<div class="field-row"><span class="fi">${ico}</span><div><div class="fl">${lbl}</div><div class="fv">${val}</div></div></div>`;
+  const href = linkFor(lbl, val);
+  const inner = href
+    ? `<a href="${href}" rel="noopener">${val}</a>`
+    : val;
+  const cls = href ? 'field-row tappable' : 'field-row';
+  return `<div class="${cls}"><span class="fi">${ico}</span><div><div class="fl">${lbl}</div><div class="fv">${inner}</div></div></div>`;
 }
 
 function showEdit() {
