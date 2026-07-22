@@ -663,8 +663,17 @@ function go(id, btn) {
 // Image scan
 // ─────────────────────────────────────────
 function handleImg(e) {
-  const file = e.target.files[0]; if (!file) return;
+  const diag = document.getElementById('imgDiag');
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) {
+    if (diag) diag.innerHTML = 'No image came back. Try <strong>Choose from photo library</strong>, or open this page in Safari rather than the home-screen icon.';
+    return;
+  }
+  if (diag) diag.textContent = '';
+
   const r = new FileReader();
+  r.onerror = () => { if (diag) diag.textContent = 'Could not read that file. Try a different photo.'; };
   r.onload = ev => {
     imgB64 = ev.target.result.split(',')[1];
     const img = document.getElementById('prevImg');
