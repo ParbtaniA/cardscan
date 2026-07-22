@@ -154,18 +154,29 @@ export default {
         // Burn it — single use
         await env.KV.delete(`invite:${invite}`);
 
-        const user = {
-          uid: randomId('usr_'),
-          name: name.trim(),
-          admin: !!inv.grantsAdmin,
-          active: true,
-          invitedBy: inv.createdBy,
-          invitedByName: inv.createdByName,
-          createdAt: new Date().toISOString(),
-        };
+        let user;
+        if (inv.restoreUid) {
+          // Re-issued link: step back into the existing identity so past contacts still belong to them
+          const existing = await env.KV.get(`user:${inv.restoreUid}`);
+          if (!existing) return fail('That account no longer exists', 404);
+          user = JSON.parse(existing);
+          user.active = true;
+          if (name.trim()) user.name = name.trim();
+          user.restoredAt = new Date().toISOString();
+        } else {
+          user = {
+            uid: randomId('usr_'),
+            name: name.trim(),
+            admin: !!inv.grantsAdmin,
+            active: true,
+            invitedBy: inv.createdBy,
+            invitedByName: inv.createdByName,
+            createdAt: new Date().toISOString(),
+          };
+          if (inv.grantsAdmin) await env.KV.put('root_created', user.uid);
+          if (inv.createdBy) await env.KV.put(`child:${inv.createdBy}:${user.uid}`, '1');
+        }
         await saveUser(env, user);
-        if (inv.grantsAdmin) await env.KV.put('root_created', user.uid);
-        if (inv.createdBy) await env.KV.put(`child:${inv.createdBy}:${user.uid}`, '1');
 
         const token = await signToken({ uid: user.uid }, env.JWT_SECRET);
         return json({ token, user });
@@ -302,6 +313,25 @@ export default {
           users.push({ uid: u.uid, name: u.name, active: u.active, admin: u.admin, invitedByName: u.invitedByName, createdAt: u.createdAt });
         }
         return json({ users });
+      }
+
+      // ── Admin: re-issue access to someone who lost their session
+      if (path === '/admin/reinvite' && request.method === 'POST') {
+        if (!me?.admin) return fail('Admin only', 403);
+        const { uid } = await request.json();
+        const raw = await env.KV.get(`user:${uid}`);
+        if (!raw) return fail('No such user', 404);
+        const target = JSON.parse(raw);
+
+        const tok = randomId('inv_');
+        await env.KV.put(`invite:${tok}`, JSON.stringify({
+          restoreUid: uid,
+          createdBy: me.uid,
+          createdByName: me.name,
+          createdAt: new Date().toISOString(),
+        }), { expirationTtl: INVITE_TTL_MS / 1000 });
+
+        return json({ url: `${env.APP_URL}?invite=${tok}`, name: target.name, restore: true });
       }
 
       // ── Admin: kill switch
